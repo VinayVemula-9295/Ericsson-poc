@@ -1,0 +1,201 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Discovery",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "eks:DescribeClusterVersions"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-south-1"
+        }
+      }
+    },
+    {
+      "Sid": "LaunchInstances",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:ap-south-1:333347372766:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "Innominds-IIPP",
+          "aws:RequestTag/Environment": "poc",
+          "aws:RequestedRegion": "ap-south-1"
+        },
+        "StringLike": {
+          "ec2:InstanceType": "t3.*"
+        }
+      }
+    },
+    {
+      "Sid": "LaunchDependencies",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": [
+        "arn:aws:ec2:ap-south-1::image/*",
+        "arn:aws:ec2:ap-south-1:333347372766:subnet/*",
+        "arn:aws:ec2:ap-south-1:333347372766:security-group/*",
+        "arn:aws:ec2:ap-south-1:333347372766:network-interface/*",
+        "arn:aws:ec2:ap-south-1:333347372766:volume/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-south-1"
+        }
+      }
+    },
+    {
+      "Sid": "LaunchTags",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": [
+        "arn:aws:ec2:ap-south-1:333347372766:instance/*",
+        "arn:aws:ec2:ap-south-1:333347372766:volume/*",
+        "arn:aws:ec2:ap-south-1:333347372766:network-interface/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "ec2:CreateAction": "RunInstances",
+          "aws:RequestedRegion": "ap-south-1"
+        }
+      }
+    },
+    {
+      "Sid": "ManagedInstanceLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:TerminateInstances",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:MonitorInstances",
+        "ec2:UnmonitorInstances",
+        "ec2:CreateTags",
+        "ec2:DeleteTags"
+      ],
+      "Resource": "arn:aws:ec2:ap-south-1:333347372766:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-south-1",
+          "aws:ResourceTag/Project": "Innominds-IIPP",
+          "aws:ResourceTag/Environment": "poc"
+        }
+      }
+    },
+    {
+      "Sid": "CreateCluster",
+      "Effect": "Allow",
+      "Action": "eks:CreateCluster",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "Innominds-IIPP",
+          "aws:RequestTag/Environment": "poc",
+          "aws:RequestedRegion": "ap-south-1"
+        }
+      }
+    },
+    {
+      "Sid": "ClusterLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeCluster",
+        "eks:DeleteCluster",
+        "eks:UpdateClusterConfig",
+        "eks:UpdateClusterVersion",
+        "eks:DescribeUpdate",
+        "eks:ListUpdates",
+        "eks:CreateNodegroup",
+        "eks:ListNodegroups"
+      ],
+      "Resource": "arn:aws:eks:ap-south-1:333347372766:cluster/iipp-*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-south-1"
+        }
+      }
+    },
+    {
+      "Sid": "NodegroupLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "eks:CreateNodegroup",
+        "eks:DescribeNodegroup",
+        "eks:DeleteNodegroup",
+        "eks:UpdateNodegroupConfig",
+        "eks:UpdateNodegroupVersion",
+        "eks:DescribeUpdate",
+        "eks:ListUpdates"
+      ],
+      "Resource": "arn:aws:eks:ap-south-1:333347372766:nodegroup/iipp-*/*/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-south-1"
+        }
+      }
+    },
+    {
+      "Sid": "EKSTags",
+      "Effect": "Allow",
+      "Action": [
+        "eks:TagResource",
+        "eks:UntagResource",
+        "eks:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:eks:ap-south-1:333347372766:cluster/iipp-*",
+        "arn:aws:eks:ap-south-1:333347372766:nodegroup/iipp-*/*/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-south-1"
+        }
+      }
+    },
+    {
+      "Sid": "ReadServiceRoles",
+      "Effect": "Allow",
+      "Action": "iam:GetRole",
+      "Resource": [
+        "arn:aws:iam::333347372766:role/IIPPEKSClusterRole",
+        "arn:aws:iam::333347372766:role/IIPPEKSNodeRole"
+      ]
+    },
+    {
+      "Sid": "PassClusterRole",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::333347372766:role/IIPPEKSClusterRole",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "eks.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "PassNodeRole",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::333347372766:role/IIPPEKSNodeRole",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "eks.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "DescribeClusterKey",
+      "Effect": "Allow",
+      "Action": "kms:DescribeKey",
+      "Resource": "arn:aws:kms:ap-south-1:333347372766:key/REPLACE_WITH_VERIFIED_KEY_ID"
+    },
+    {
+      "Sid": "EKSKeyGrants",
+      "Effect": "Allow",
+      "Action": "kms:CreateGrant",
+      "Resource": "arn:aws:kms:ap-south-1:333347372766:key/REPLACE_WITH_VERIFIED_KEY_ID"
+    }
+  ]
+}

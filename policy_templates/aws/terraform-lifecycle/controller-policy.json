@@ -1,0 +1,93 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "IIPPListRemoteStatePrefix",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::inframind-tfstate-704298683641-20261104",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "iipp/deployments",
+            "iipp/deployments/*",
+            "iipp/poc",
+            "iipp/poc/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "IIPPStateBucketLocation",
+      "Effect": "Allow",
+      "Action": "s3:GetBucketLocation",
+      "Resource": "arn:aws:s3:::inframind-tfstate-704298683641-20261104"
+    },
+    {
+      "Sid": "IIPPStateReadWriteAndVersionRecovery",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::inframind-tfstate-704298683641-20261104/iipp/deployments/*",
+        "arn:aws:s3:::inframind-tfstate-704298683641-20261104/iipp/poc/*"
+      ]
+    },
+    {
+      "Sid": "IIPPNativeStateLockfiles",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::inframind-tfstate-704298683641-20261104/iipp/deployments/*.tflock",
+        "arn:aws:s3:::inframind-tfstate-704298683641-20261104/iipp/poc/*.tflock"
+      ]
+    },
+    {
+      "Sid": "IIPPProviderSecretsOnly",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:TagResource",
+        "secretsmanager:UpdateSecret"
+      ],
+      "Resource": "arn:aws:secretsmanager:ap-south-1:704298683641:secret:innominds-iipp/connections/*"
+    },
+    {
+      "Sid": "IIPPAssumeOnlyPOCAndTESTRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": [
+        "arn:aws:iam::333347372766:role/IIPPInventoryReadRole",
+        "arn:aws:iam::333347372766:role/IIPPTerraformExecutionRole",
+        "arn:aws:iam::695729002971:role/IIPPInventoryReadRole",
+        "arn:aws:iam::695729002971:role/IIPPTerraformExecutionRole"
+      ]
+    },
+    {
+      "Sid": "IIPPLiveEC2PublicPriceListRead",
+      "Effect": "Allow",
+      "Action": [
+        "pricing:GetProducts"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "IIPPControllerLiveAccountIdentity",
+      "Effect": "Allow",
+      "Action": "sts:GetCallerIdentity",
+      "Resource": "*"
+    }
+  ]
+}

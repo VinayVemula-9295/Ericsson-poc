@@ -1,0 +1,165 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Intelligent Provisioning Platform — flow validation</title><style>
+body{font:15px/1.55 system-ui,sans-serif;color:#202b36;max-width:1120px;margin:36px auto;padding:0 24px}h1,h2{color:#244d72}h2{border-bottom:1px solid #ccd7e0;padding-top:20px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #ccd7e0;padding:10px;text-align:left;vertical-align:top}th{background:#edf3f8}code,pre{font-family:Consolas,monospace;background:#f3f5f7}code{overflow-wrap:anywhere}pre{padding:16px;white-space:pre-wrap}@media print{body{max-width:none;margin:0;font-size:11px}tr,pre{break-inside:avoid}h2{break-after:avoid}}
+</style><body><h1>Intelligent Provisioning Platform — application flow and prompt checks</h1>
+<p>Application: http://13.203.223.14:8501</p>
+<p>Release scope: Linux and Windows Server VM recommendations, Linux Kubernetes</p>
+<p>sizing, official-source evidence, policy checks and Terraform configuration export.</p>
+<p>This checklist separates deployed UI behavior from live cloud provisioning.</p>
+<h2>1. Before testing</h2>
+<ul>
+<li>Open Work and Agent. Confirm the global cloud/account selector and Configure action.</li>
+<li>Use existing AWS Demo/Test accounts; do not create replacement accounts.</li>
+<li>In Configure, test the intended connection. Credentials belong in the connection</li>
+</ul>
+<p>  form/Secrets Manager, never in prompts, screenshots, exported files or this report.</p>
+<ul>
+<li>In Agent, leave <strong>Extended Linux / Windows POC</strong> enabled for the new flow.</li>
+<li>Start each case with Extract requirements, inspect the confirmation form, edit</li>
+</ul>
+<p>  its fields, then choose Confirm and find options. Extraction alone must not query clouds.</p>
+<ul>
+<li>Public catalogue options are estimates. A failed/unconfigured provider should</li>
+</ul>
+<p>  show missing evidence; an exact SKU or price is not guaranteed by these prompts.</p>
+<ul>
+<li>The deployment preserves Terraform flags disabled and an unconfigured state</li>
+</ul>
+<p>  bucket. Configuration downloads should work; saved-plan generation should stop</p>
+<p>  until an administrator supplies the existing workflow prerequisites.</p>
+<h2>2. Main application flow</h2>
+<p>Work inventory → Agent request → Extract requirements → Confirm requirements →</p>
+<p>Collect cloud evidence → Apply hard policies → Rank eligible options → Select</p>
+<p>configuration → Download Terraform configuration → Optional saved-plan generation</p>
+<p>with verified connection → POC review. New-target execution remains disabled.</p>
+<p>The top bar selects the Work/legacy context. The extended POC has explicit</p>
+<p>AWS/Azure/GCP connection selectors inside its confirmation form; select them</p>
+<p>there as well. Unconnected Azure/GCP comparisons use labelled reference hardware</p>
+<p>profiles rather than live account specifications.</p>
+<h2>3. Prompt acceptance checklist</h2>
+<table>
+<tr><th>ID</th><th>Prompt or action</th><th>Confirmation settings / expected behavior</th></tr>
+<tr><td>UI-01</td><td>Open Agent, submit an empty request</td><td>Show “Describe your infrastructure requirements first”; no catalogue results or deployment action.</td></tr>
+<tr><td>VM-01</td><td><code>Recommend a Linux VM with 2 vCPU and 8 GiB RAM. Prefer lowest cost.</code></td><td>Confirm Linux, VM, 2/8. Set Ranking to Lowest Cost explicitly. Select tested connections. Eligible options meet both minimums; exact fits are preferred.</td></tr>
+<tr><td>VM-02</td><td><code>Recommend a Windows Server VM with 4 vCPU and 16 GiB RAM under 250 USD.</code></td><td>Confirm Windows, VM, 4/16 and budget 250. Windows-specific prices must be used. Missing licence prices mean unavailable evidence, never Linux substitution.</td></tr>
+<tr><td>VM-03</td><td><code>Find a Linux server with 4 vCPU and 9 GiB RAM.</code></td><td>Confirm 4/9. If no exact option exists, only recommend CPU &gt;=4 and RAM &gt;=9. Distinguish Recommended and Lowest cost.</td></tr>
+<tr><td>REQ-01</td><td><code>I need a server for a customer portal.</code></td><td>CPU/RAM defaults must be disclosed and editable. Do not treat the prompt as sufficient production sizing evidence.</td></tr>
+<tr><td>POL-01</td><td><code>Recommend a confidential Linux VM with 4 vCPU and 16 GiB RAM. Data must stay only in India.</code></td><td>Residency confirmation must block comparison until explicit region IDs are supplied. Enter <code>ap-south-1,centralindia,asia-south1</code>. Country names are not automatically converted into legal residency guarantees.</td></tr>
+<tr><td>POL-02</td><td><code>Recommend a Linux VM with 2 vCPU and 8 GiB RAM.</code></td><td>Set permitted regions to <code>ap-south-1</code>. Azure/GCP options must be excluded. Decision evidence must show the reason.</td></tr>
+<tr><td>POL-03</td><td><code>Recommend a Linux VM with 2 vCPU and 8 GiB RAM.</code></td><td>Enable Require verified encryption and Require verified private networking. Without deployment evidence, show unknown controls/no verified eligible option. A private/encrypted template alone is not evidence of an existing deployment.</td></tr>
+<tr><td>CAP-01</td><td><code>Recommend a Linux VM with 4 vCPU and 16 GiB RAM for a traffic spike.</code></td><td>Enable Require verified quota headroom. If headroom is unknown, exclude the candidate. AWS quota ceilings/offerings must not be described as spare capacity.</td></tr>
+<tr><td>LAT-01</td><td><code>Recommend a Linux VM with 2 vCPU and 8 GiB RAM and latency below 20ms.</code></td><td>Confirm hard target 20, origin Mumbai, p95, https, 5m. With no uploaded comparable evidence, no compliant latency recommendation.</td></tr>
+<tr><td>LAT-02</td><td>Repeat LAT-01 using an actual recent probe upload</td><td>Match provider/region/origin/metric/method/window. Fresh measured value &lt;=20 passes; &gt;20 fails. Evidence older than 15 minutes, future timestamps or a different origin cannot satisfy the target.</td></tr>
+<tr><td>K8S-01</td><td><code>Recommend Kubernetes with Linux worker nodes of 4 vCPU and 16 GiB RAM.</code></td><td>Confirm Kubernetes/Linux, replicas 7, pod CPU 1, pod RAM 2 GiB, tolerate one node failure. For a 4/16 node, 20% overhead allows 3 such pods/node; 4 nodes including the spare. Other selected node sizes produce different results.</td></tr>
+<tr><td>K8S-02</td><td><code>Recommend Windows Kubernetes with 4 vCPU and 16 GiB RAM.</code></td><td>Windows worker nodes must be rejected as outside the POC. Switch OS to Linux to continue.</td></tr>
+<tr><td>AI-01</td><td><code>Recommend a confidential Linux VM with 2 vCPU and 8 GiB RAM.</code></td><td>Choose Explain verified evidence. Show deterministic output and the sensitive-data restriction; do not send the request to external AI.</td></tr>
+<tr><td>AI-02</td><td><code>Recommend a Linux VM with 2 vCPU and 8 GiB RAM.</code></td><td>For internal/public data, explanation may use configured AI. It must agree with displayed rankings and prices and identify unavailable evidence. Provider API/model errors are not a successful explanation.</td></tr>
+<tr><td>SRC-01</td><td>After an ordinary comparison, choose Research official documentation</td><td>Show official source URLs, retrieval timestamps and retrieved/unavailable status. Reference text must not be presented as measured latency, quota or launch capacity.</td></tr>
+<tr><td>ERR-01</td><td>Compare with an unconfigured provider/API or invalid provider region</td><td>Show unavailable/failed evidence rather than fixture prices, fabricated inventory or a successful provisioning claim.</td></tr>
+</table>
+<h2>4. Latency upload format</h2>
+<p>Use actual probe results and timestamps. The fixed example below is deliberately</p>
+<p>historical and should fail freshness checks after 15 minutes; do not change its</p>
+<p>timestamp and present the same number as a new real measurement.</p>
+<pre><code>
+[
+
+  {
+
+    &quot;origin&quot;: &quot;Mumbai&quot;,
+
+    &quot;provider&quot;: &quot;AWS&quot;,
+
+    &quot;region&quot;: &quot;ap-south-1&quot;,
+
+    &quot;metric&quot;: &quot;p95&quot;,
+
+    &quot;method&quot;: &quot;https&quot;,
+
+    &quot;window&quot;: &quot;5m&quot;,
+
+    &quot;measured_at&quot;: &quot;2026-11-04T12:00:00Z&quot;,
+
+    &quot;value_ms&quot;: 12.5
+
+  }
+
+]
+
+</code></pre>
+<p>For a controlled UI-only test, synthetic records may be used only when labelled</p>
+<p>synthetic in the test report. They do not validate cloud latency or a customer SLO.</p>
+<p>Use Azure/centralindia or GCP/asia-south1 for corresponding provider measurements.</p>
+<h2>5. Terraform configuration download</h2>
+<p>1. Run VM-01 or VM-02 with at least one priced eligible candidate.</p>
+<p>2. Choose Select configuration, then Download Terraform configuration.</p>
+<p>3. Open the ZIP locally. It must contain <code>main.tf.json</code>, <code>manifest.json</code> and <code>README.txt</code>.</p>
+<p>4. Manifest status must be <code>CONFIGURATION_ONLY</code>, live execution validation false,</p>
+<p>   with a SHA-256 hash and the confirmed request/candidate snapshot.</p>
+<p>5. Inspect provider-pinned resources for the selected provider and OS. Windows</p>
+<p>   must not become a Linux VM. No plaintext credentials, passwords or approval tokens.</p>
+<p>6. Repeat K8S-01, selecting each available provider: exported resources should be</p>
+<p>   EKS, AKS or GKE respectively. Worker OS is Linux. Unknown service versions and</p>
+<p>   control-plane/storage/network costs must remain explicit.</p>
+<p>7. A configuration ZIP is not a binary Terraform plan and must not claim apply success.</p>
+<h2>6. Optional saved-plan and review checks</h2>
+<p>These require an administrator-configured S3 backend, enabled planning flag,</p>
+<p>tested provider connection, appropriate IAM/API permissions and protected secrets.</p>
+<p>They were not executed as deployment health checks. Do not enable flags simply</p>
+<p>to make this checklist pass.</p>
+<ul>
+<li>Expand Generate a saved Terraform plan with a verified connection and inspect</li>
+</ul>
+<p>  the required variable schema. Supply only non-secret JSON values.</p>
+<ul>
+<li>AWS inputs include name, provider region, execution role, image, subnet and</li>
+</ul>
+<p>  security group. Choose Discover approved AWS base images for image evidence.</p>
+<p>  Existing AWS region/family policies still apply; a recommendation is not permission to plan.</p>
+<ul>
+<li>Azure uses subscription, resource group, existing network/security group and a</li>
+</ul>
+<p>  provider platform image. Windows additionally requires a protected runner password;</p>
+<p>  do not enter it in JSON. Linux requires an administrator name and SSH public key.</p>
+<ul>
+<li>GCP uses project, zone, subnet and a versioned public image. Do not upload private keys in JSON.</li>
+<li>Kubernetes variables include service version, approved networks and node identities;</li>
+</ul>
+<p>  use the displayed schema. Service/node compatibility still needs validation.</p>
+<ul>
+<li>With planning disabled or missing prerequisites, expect an actionable failure,</li>
+</ul>
+<p>  no plan-ready status and no infrastructure changes.</p>
+<ul>
+<li>With valid prerequisites, expect a readable saved-plan summary and checksum.</li>
+</ul>
+<p>  Preparing a plan must not create infrastructure.</p>
+<ul>
+<li>Review requires a POC reviewer name and the existing approval token. An invalid</li>
+</ul>
+<p>  token, expired plan (&gt;1 hour), changed checksum, identity or policy must reject review.</p>
+<ul>
+<li>Successful POC review records <code>REVIEWED_EXECUTION_DISABLED</code>; it does not apply</li>
+</ul>
+<p>  a new target. Rejection records <code>REJECTED</code>.</p>
+<ul>
+<li>New request/configuration selection must clear the previous saved-plan display.</li>
+</ul>
+<p>Legacy AWS apply/destroy remains available with the extended toggle off, subject</p>
+<p>to its existing flags, policies, state and explicit approval. That is a separate</p>
+<p>cloud-mutation test, not part of deployment verification.</p>
+<h2>7. Record evidence and results</h2>
+<p>For each case record: test ID, actual UTC time, account/provider, confirmed inputs,</p>
+<p>actual result, screenshot or exported filename and status (Pass / Fail / Blocked /</p>
+<p>Not run). Record missing credentials/permissions as Blocked, never Pass.</p>
+<p>Capture screenshots of requirements, price/specification sources, policy checks,</p>
+<p>selected configuration and export manifest. Redact account identifiers as needed;</p>
+<p>never capture credentials or approval tokens. Keep sensitive saved plans protected.</p>
+<p>Stop acceptance for an unhandled exception, stale result shown as current, wrong</p>
+<p>OS pricing, disallowed region recommended, missing credentials replaced by fixtures,</p>
+<p>or any infrastructure action executed merely by extracting, comparing or downloading.</p>
+<h2>8. Known release limits</h2>
+<p>Azure/GCP live execution, complete quota/headroom coverage, guaranteed launch</p>
+<p>capacity, Kubernetes version compatibility and complete cluster bills are not</p>
+<p>validated. Kubernetes sizing is illustrative. Private cloud, Crossplane, GitOps,</p>
+<p>GPU, BYOL, Windows Kubernetes and 200M-subscriber production validation are excluded.</p>
+<p>Successful HTTP health and UI checks do not establish those capabilities.</p></body></html>

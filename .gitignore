@@ -1,0 +1,78 @@
+# Python environments and generated files
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-cache-files-*/
+.cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+build/
+dist/
+*.egg-info/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+!.env.sample
+.streamlit/secrets.toml
+.aws/
+*.pem
+*.key
+
+# Runtime data, logs, and backups
+/data/
+/terraform_deployments/
+provider_connections.json
+*.log
+*.bak
+*.bak-*
+cloudpilot-patch-backups/
+cloudpilot-backups/
+
+# Obsolete local patch scripts (also excluded from Docker builds)
+cloudpilot_dashboard_refinement_*.py
+cloudpilot_agent_ux_patch*.py
+patch_cloudpilot_prompt_profiles*.py
+apply_cloudpilot_dynamic_catalog_patch.py
+
+# Editor and temporary files
+.idea/
+*.swp
+*.swo
+*~
+*.tmp
+
+# Release archives
+*.zip
+*.tar.gz
+*.tgz
+
+# Terraform generated files and sensitive inputs (keep .terraform.lock.hcl)
+.terraform/
+terraform-plugin-cache/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+tfplan
+tfplan-*
+*.tfplan
+crash.log
+crash.*.log
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

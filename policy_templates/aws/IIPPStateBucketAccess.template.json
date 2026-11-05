@@ -1,0 +1,30 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListOnlyIIPPStatePrefix",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::__BUCKET__",
+      "Condition": {"StringLike": {"s3:prefix": ["iipp/deployments", "iipp/deployments/*", "iipp/poc", "iipp/poc/*"]}}
+    },
+    {
+      "Sid": "ReadStateBucketLocation",
+      "Effect": "Allow",
+      "Action": "s3:GetBucketLocation",
+      "Resource": "arn:aws:s3:::__BUCKET__"
+    },
+    {
+      "Sid": "ReadWriteVersionedStateObjects",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"],
+      "Resource": ["arn:aws:s3:::__BUCKET__/iipp/deployments/*", "arn:aws:s3:::__BUCKET__/iipp/poc/*"]
+    },
+    {
+      "Sid": "ManageNativeTerraformLockfiles",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": ["arn:aws:s3:::__BUCKET__/iipp/deployments/*.tflock", "arn:aws:s3:::__BUCKET__/iipp/poc/*.tflock"]
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+/* Option 04: Agent Workspace. Scoped to Agent so Work retains its existing layout. */
+.st-key-agent-conversation{max-width:1120px;margin:1rem auto}
+.st-key-agent-conversation h2{font-size:1.8rem;font-weight:700;letter-spacing:-.04rem;color:#172b47;margin:1.4rem 0 1rem}
+.st-key-agent-composer{border:1px solid #ccd2dc;border-radius:28px;padding:8px 18px;background:#fff;box-shadow:0 3px 15px #172b4709}
+.st-key-agent-composer [data-testid="stTextArea"]>div{border:0!important;box-shadow:none!important;background:#fff!important}
+.st-key-agent-conversation textarea[aria-label="Ask Intelligent Provisioning agent"]{background:#fff!important;border:0!important;box-shadow:none!important;font-size:1rem!important;resize:none}
+.st-key-agent-conversation textarea[aria-label="Ask Intelligent Provisioning agent"]::placeholder{color:#9299a5;opacity:1}
+.st-key-agent-composer:focus-within{border-color:#633bd3;box-shadow:0 0 0 3px #633bd315}
+.st-key-agent-composer button{border-radius:24px!important;min-height:42px}
+.st-key-agent-conversation [data-testid="stForm"]:has(textarea[aria-label="Ask Intelligent Provisioning agent"]){display:flex;flex-direction:column}
+.st-key-kubernetes-sizing{border-top:1px solid #e0e6ef;margin-top:10px;padding-top:10px}
+[data-testid="stAppViewContainer"]:has(.st-key-agent-workspace){background:#f5f7fb;color:#172b47}
+[data-testid="stMainBlockContainer"]:has(.st-key-agent-workspace){max-width:1480px;padding-top:4rem}
+[data-testid="stSidebar"]:has(~ * .st-key-agent-workspace){background:#fff}
+.st-key-agent-workspace{--workspace-purple:#633bd3;--workspace-line:#e0e6ef}
+.st-key-agent-workspace h1{font-size:2rem;font-weight:650;letter-spacing:-.055rem;margin-top:.1rem;padding-top:0}
+.workspace-kicker{font-size:.66rem;letter-spacing:.12rem;font-weight:700;color:#633bd3;margin:.6rem 0 .3rem}
+.st-key-agent-workspace h3{font-size:1.25rem;letter-spacing:-.025rem}
+.st-key-agent-workspace h4{font-size:1rem}
+.st-key-agent-workspace [data-testid="stCaptionContainer"]{color:#5c6b82;font-size:.8rem;overflow-wrap:anywhere}
+.st-key-agent-workspace [data-testid="stVerticalBlockBorderWrapper"]{border-radius:14px}
+.st-key-agent-workspace [data-testid="stColumn"]{min-width:0}
+.st-key-agent-workspace [data-testid="stForm"]:has([aria-label="Infrastructure requirements"]){max-width:none;margin:1rem 0 1.25rem;background:#fff;border:1px solid #c9b9e8;border-radius:14px;padding:1.5rem;box-shadow:0 8px 30px #633bd308}
+.st-key-agent-workspace textarea{background:#fafbff!important;line-height:1.7!important}
+.st-key-agent-workspace [data-testid="stBaseButton-primary"],.st-key-agent-workspace [data-testid="stBaseButton-primaryFormSubmit"]{background:#633bd3;border-color:#633bd3;color:#fff;border-radius:8px}
+.st-key-agent-workspace [data-testid="stBaseButton-primary"]:hover,.st-key-agent-workspace [data-testid="stBaseButton-primaryFormSubmit"]:hover{background:#5030af;border-color:#5030af;color:#fff}
+.st-key-agent-workspace button:focus-visible{outline:3px solid #a88ce9;outline-offset:3px}
+.st-key-agent-workspace [data-testid="stMetric"]{background:#fff;border-color:#e0e6ef;border-radius:10px;padding:12px;min-width:0}
+.st-key-agent-workspace [data-testid="stMetricValue"]{font-size:1.3rem}
+.st-key-agent-workspace [data-testid="stExpander"]{border-color:#e0e6ef;border-radius:10px;background:#fff}
+.st-key-agent-evidence,.st-key-agent-cloud-coverage,.st-key-agent-audit,.st-key-agent-empty-state,.st-key-agent-execution{background:#fff;border-radius:14px;padding:8px}
+.st-key-agent-evidence{margin-top:1rem}
+.st-key-agent-recommendation{background:#fbf9ff;border:1px solid #dcd1f2!important;border-radius:14px;padding:8px}
+.decision-card{padding:15px;margin:3px 0 10px;background:#f7f8fc;border-radius:9px;border:1px solid #edf0f6;min-width:0}
+.decision-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.st-key-agent-workspace .decision-card h4{font-size:.8rem;font-weight:650;margin:0;padding:0;line-height:1.5}
+.decision-card p{color:#5c6b82;font-size:.76rem;line-height:1.7;margin:9px 0 0;overflow-wrap:anywhere}
+.workspace-badge{display:inline-block;font-size:.61rem;font-weight:650;line-height:1.5;padding:4px 7px;border-radius:5px;white-space:normal;color:#53617a;background:#e9edf4}
+.workspace-badge.purple{background:#ece5fa;color:#6039b4}
+.workspace-badge.good{background:#e5f2ec;color:#216650}
+.execution-methods{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:5px 0 10px}
+.execution-method{padding:16px;border:1px solid #e0e6ef;border-radius:10px;background:#fafbfe;min-width:0}
+.execution-method.active{background:#f9f6ff;border-color:#c2abe9}
+.st-key-agent-workspace .execution-method h4{font-size:.85rem;line-height:1.6;margin:10px 0 5px;padding:0}
+.execution-method p{font-size:.74rem;color:#5c6b82;line-height:1.7;margin:0}
+.workspace-audit-row{border-bottom:1px solid #e7eaf1;padding:13px 0;display:flex;flex-direction:column;gap:5px;font-size:.76rem;overflow-wrap:anywhere}
+.workspace-audit-row time{color:#67748b;font-size:.65rem}
+.workspace-audit-row strong{font-weight:600;color:#172b47}
+.workspace-audit-row span{color:#6744b3;font-size:.7rem}
+@media(max-width:1100px){
+ [data-testid="stMainBlockContainer"]:has(.st-key-agent-workspace){padding-left:1.25rem;padding-right:1.25rem}
+ .st-key-agent-workspace .execution-methods{grid-template-columns:1fr}
+ .st-key-agent-workspace h1{font-size:1.8rem}
+}
+@media(max-width:850px){
+ .st-key-agent-workspace>[data-testid="stHorizontalBlock"],.st-key-agent-workspace>[data-testid="stVerticalBlock"]>[data-testid="stHorizontalBlock"]{flex-direction:column;gap:1rem}
+ .st-key-agent-workspace>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"],.st-key-agent-workspace>[data-testid="stVerticalBlock"]>[data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{width:100%;flex:1 1 100%}
+ .st-key-agent-evidence{margin-top:0}
+ .st-key-agent-workspace [data-testid="stForm"]:has([aria-label="Infrastructure requirements"]){padding:1rem}
+}
+@media(max-width:640px){
+ .st-key-agent-workspace h1{font-size:1.6rem}
+ .st-key-agent-workspace .execution-methods{grid-template-columns:1fr}
+ .st-key-agent-workspace [data-testid="stHorizontalBlock"]{flex-wrap:wrap}
+ .st-key-agent-workspace [data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{min-width:min(100%,180px);flex:1 1 100%}
+ .st-key-agent-composer [data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important;flex-direction:row!important;gap:8px}
+ .st-key-agent-composer [data-testid="stHorizontalBlock"]>[data-testid="stColumn"]{min-width:0!important;flex:1 1 0!important}
+ .st-key-agent-composer [data-testid="stHorizontalBlock"]>[data-testid="stColumn"]:last-child{flex:0 0 78px!important}
+}

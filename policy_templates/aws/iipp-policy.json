@@ -1,0 +1,35 @@
+{
+  "policy_name": "IIPP-AWS-NonProduction-v1",
+  "default_effect": "DENY",
+  "allowed_regions": ["ap-south-1"],
+  "allowed_account_environments": ["poc", "test"],
+  "account_environment_isolation": "The POC account role can only create POC-tagged resources; the TEST account role can only create TEST-tagged resources.",
+  "allowed_instance_families": ["t3"],
+  "maximum_ttl_days": 30,
+  "required_tags": {
+    "Project": "Innominds-IIPP",
+    "Environment": "poc|test",
+    "Owner": "required",
+    "ManagedBy": "Innominds-IIPP-Terraform",
+    "TTL_Days": "1..30"
+  },
+  "network": {
+    "public_ip_assignment": false,
+    "security_group_ingress_from_anywhere": false,
+    "require_existing_reviewed_subnet": true,
+    "require_existing_reviewed_security_group": true
+  },
+  "approval": {
+    "terraform_plan_required": true,
+    "human_approval_required": true,
+    "apply_saved_plan_only": true,
+    "maximum_plan_age_hours": 4
+  },
+  "budget_alerts_usd": {
+    "poc_monthly": 75,
+    "test_monthly": 35,
+    "notification_threshold_percent": [50, 80, 100],
+    "note": "Budgets are alerting controls, not hard spending caps."
+  },
+  "note": "Initial POC guardrail. Keep this no broader than the target-account IAM policy. Expand after testing quota, pricing, approval, and destroy workflows."
+}

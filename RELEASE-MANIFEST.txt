@@ -1,0 +1,55 @@
+InfraMind — Multi-Cloud Intelligent Provisioning — v18
+Release date: 2026-11-03
+Tagline: Think Intelligent. Provision Anywhere.
+Selected base: InfraMind v16 source package
+Architecture: Reasoning layer + Terraform-only provisioning + human approval + audit
+Kubernetes: excluded
+GitOps: excluded
+
+Implemented in this source package:
+- InfraMind visible branding across page title, sidebar, top bar and Agent; Innominds company mark retained in left navigation.
+- Single global provider/account selector shared by Work and Agent.
+- Full live connected-account inventory and AWS telemetry panel in Work only; Agent still uses selected-account live inventory as response evidence.
+- Configure modal uses one-shot open state, explicit Close control and a separate one-shot success dialog.
+- Agent answer sanitizer removes internal thinking/analysis/reasoning tags before Markdown rendering.
+- Agent comparison explanation automatically follows prompt submission and targets 6–8 short evidence-grounded lines.
+- Recommended and lowest-cost eligible candidates are separately marked in the provider cards, comparison table and selection dropdown; below-requirement options remain in exclusions/closest-fit evidence.
+- Existing exact-match, closest-configuration, all-discovered-AWS-options and detailed-comparison sections are preserved.
+- Terraform-only AWS provisioning, S3-backed state, native locking, approval and destroy lifecycle preserved from v15.
+
+Validation in build environment:
+- Pytest: 82 passed.
+- Python compilation: passed.
+- Shell syntax: passed.
+- JSON policy parsing: passed.
+- ZIP integrity: checked before delivery.
+
+Not verified in build environment:
+- Live browser/Streamlit rendering, Bedrock response behavior, Secrets Manager permissions, cloud API calls, Terraform validate/plan/apply/destroy or EC2 deployment.
+- Azure/GCP Terraform provisioning is not implemented; AWS remains the only end-to-end Terraform provider in this POC.
+
+Compatibility notes:
+- Keep existing EC2 project checkout, Docker image/container identifiers, IAM role names, Secrets Manager `innominds-iipp` namespace, /opt/cloudpilot/data and approval token path unchanged during in-place overlay.
+- Existing local Terraform state files are preserved; no migration or deletion is performed by this UI release.
+
+
+Previous v17 recommendation improvements:
+- Exact hardware matches are preferred; otherwise a recommendation must satisfy both CPU and RAM minimums.
+- Price, verified availability evidence and measured latency are used according to explicit strategy; unknown latency/capacity is never invented.
+- Recommended and Optimal candidates are labelled in cards, table and selection control.
+- The Agent explanation is triggered after prompt comparison, grounded in deterministic evidence, and limited to 6–8 sanitized lines.
+- Regression case for 4 vCPU / 9 GiB sample prices ranks AWS m5a.xlarge (USD 81.03/month) ahead of c5n.xlarge (USD 157.68/month), conditional on live regional-offering and price evidence.
+
+Previous v17 validation: 73 unit tests passed; Python compilation, shell syntax, JSON parsing and ZIP integrity checks passed. No EC2 deployment, live AWS API validation, browser UI test or Terraform apply was performed for v17 in the build environment.
+
+
+V18 live AWS pricing changes:
+- Each new Agent comparison forces fresh AWS Price List Query API pricing for the discovered EC2 shortlist.
+- Actual price retrieval/effective/publication timestamps and product metadata are included.
+- The internal cache has a 300-second default TTL; failures/ambiguous responses are not cached.
+- No static/sample price fallback exists for AWS when Price List data is missing.
+- The controller role policy generator and standalone minimal policy include pricing:GetProducts.
+- The Agent receives exact live price evidence and explains the deterministic result.
+
+Validation: 82 unit tests passed; Python compilation, shell syntax, JSON parsing and release ZIP integrity checked. No user's AWS credentials were available in the build environment, so no live AWS API call or EC2 deployment is claimed.
+\nInfraMind v19 refinement: infrastructure_request.py, cloud_adapters/aws.py, app.py, tests/test_multicloud_features.py, UPDATE-NOTES-v19.md, docs/deploy-v19.md, IMPLEMENTATION_STATUS.md\n
