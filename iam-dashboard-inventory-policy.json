@@ -1,0 +1,64 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AccountInventoryLists",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeRegions",
+        "ec2:DescribeInstances",
+        "ec2:DescribeVpcs",
+        "eks:ListClusters",
+        "ecs:ListClusters",
+        "ecs:ListServices",
+        "lambda:ListFunctions",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "s3:ListAllMyBuckets",
+        "ec2:DescribeVolumes",
+        "autoscaling:DescribeAutoScalingGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "TargetResourceStatus",
+      "Effect": "Allow",
+      "Action": [
+        "eks:DescribeCluster",
+        "ecs:DescribeClusters",
+        "ecs:DescribeServices",
+        "lambda:GetFunctionConfiguration",
+        "rds:DescribeDBInstances",
+        "eks:ListNodegroups",
+        "eks:DescribeNodegroup"
+      ],
+      "Resource": [
+        "arn:aws:eks:*:REPLACE_ACCOUNT_ID:cluster/*",
+        "arn:aws:ecs:*:REPLACE_ACCOUNT_ID:cluster/*",
+        "arn:aws:ecs:*:REPLACE_ACCOUNT_ID:service/*",
+        "arn:aws:lambda:*:REPLACE_ACCOUNT_ID:function:*",
+        "arn:aws:rds:*:REPLACE_ACCOUNT_ID:db:*",
+        "arn:aws:eks:*:REPLACE_ACCOUNT_ID:nodegroup/*"
+      ]
+    },
+    {
+      "Sid": "BucketLocationOnly",
+      "Effect": "Allow",
+      "Action": "s3:GetBucketLocation",
+      "Resource": "arn:aws:s3:::*",
+      "Condition": {
+        "StringEquals": {
+          "s3:ResourceAccount": "REPLACE_ACCOUNT_ID"
+        }
+      }
+    },
+    {
+      "Sid": "ReadWorkloadMetrics",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

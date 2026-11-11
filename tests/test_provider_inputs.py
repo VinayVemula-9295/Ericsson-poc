@@ -7,6 +7,10 @@ import pytest
 import provider_inputs as live
 from recommendation_engine import progressive_choices, shortlist_with_upgrades
 
+CLUSTER = "arn:aws:iam::123456789012:role/team/cluster"
+NODE = "arn:aws:iam::123456789012:role/node"
+KEY = "arn:aws:kms:ap-south-1:123456789012:key/12345678-abcd"
+
 
 def row(sku, cpu, memory, price=50, **kwargs):
     return dict(provider="AWS", region="ap-south-1", sku=sku, vcpus=cpu, memory_gib=memory,
@@ -42,10 +46,10 @@ def aws(monkeypatch):
     subnets = [dict(SubnetId="s1", AvailabilityZone="ap-south-1a", VpcId="v1", State="available"),
                dict(SubnetId="s2", AvailabilityZone="ap-south-1b", VpcId="v1", State="available"),
                dict(SubnetId="s3", AvailabilityZone="ap-south-1c", VpcId="v2", State="available")]
-    roles = [dict(Arn="cluster-role", RoleName="cluster", AssumeRolePolicyDocument={"Statement": [
-        {"Effect": "Allow", "Principal": {"Service": "eks.amazonaws.com"}}]}),
-        dict(Arn="node-role", RoleName="node", AssumeRolePolicyDocument={"Statement": [
-            {"Effect": "Allow", "Principal": {"Service": ["ec2.amazonaws.com"]}}]})]
+    roles = [dict(Arn=CLUSTER, RoleName="cluster", AssumeRolePolicyDocument={"Statement": [
+        {"Effect": "Allow", "Action": "sts:AssumeRole", "Principal": {"Service": "eks.amazonaws.com"}}]}),
+        dict(Arn=NODE, RoleName="node", AssumeRolePolicyDocument={"Statement": [
+            {"Effect": "Allow", "Action": "sts:AssumeRole", "Principal": {"Service": ["ec2.amazonaws.com"]}}]})]
     def versions(**kwargs):
         calls.append(kwargs)
         return {"clusterVersions": [{"clusterVersion": "1.34", "versionStatus": "STANDARD_SUPPORT"}], "nextToken": "next"} if not kwargs.get("nextToken") else {"clusterVersions": [{"clusterVersion": "1.35", "versionStatus": "STANDARD_SUPPORT"}]}
@@ -53,10 +57,12 @@ def aws(monkeypatch):
         "ec2": SimpleNamespace(describe_subnets=lambda **kw: {"Subnets": subnets},
                                describe_security_groups=lambda **kw: {"SecurityGroups": [dict(GroupId="sg1", GroupName="web", VpcId="v1"), dict(GroupId="sg2", GroupName="other", VpcId="v2")]}),
         "eks": SimpleNamespace(describe_cluster_versions=versions),
-        "iam": SimpleNamespace(list_roles=lambda **kw: {"Roles": roles}),
+        "iam": SimpleNamespace(get_role=lambda **kw: {"Role": next(r for r in roles if r["RoleName"] == kw["RoleName"])},
+                               get_paginator=lambda op: SimpleNamespace(paginate=lambda: iter([{"Roles": roles[:1]}, {"Roles": roles[1:]}]))),
         "kms": SimpleNamespace(list_keys=lambda **kw: {"Keys": [{"KeyId": "key"}]},
-                               describe_key=lambda **kw: {"KeyMetadata": dict(Arn="kms-key", KeyState="Enabled", KeyUsage="ENCRYPT_DECRYPT", KeyManager="CUSTOMER", KeySpec="SYMMETRIC_DEFAULT")})}
-    monkeypatch.setattr(live, "get_connection", lambda cid: dict(provider="AWS", connection_status="CONNECTED"))
+                               describe_key=lambda **kw: {"KeyMetadata": dict(Arn=KEY, KeyState="Enabled", KeyUsage="ENCRYPT_DECRYPT", KeyManager="CUSTOMER", KeySpec="SYMMETRIC_DEFAULT")})}
+    monkeypatch.setattr(live, "get_connection", lambda cid: dict(provider="AWS", account_id="123456789012", connection_status="CONNECTED"))
+    clients["kms"].get_paginator = lambda op: SimpleNamespace(paginate=lambda: iter([clients["kms"].list_keys()]))
     monkeypatch.setattr(live, "get_aws_session", lambda cid, purpose: SimpleNamespace(client=lambda service, **kw: clients[service]))
     return clients, calls
 
@@ -67,8 +73,9 @@ def test_eks_live_versions_roles_keys_and_dependent_subnets(aws):
     assert not evidence["errors"]
     assert [v["value"] for v in evidence["choices"]["kubernetes_version"]] == ["1.34", "1.35"]
     assert calls == [dict(includeAll=False), dict(includeAll=False, nextToken="next")]
-    assert evidence["choices"]["cluster_role_arn"][0]["value"] == "cluster-role"
-    assert evidence["choices"]["node_role_arn"][0]["value"] == "node-role"
+    assert evidence["choices"]["cluster_role_arn"] == [live.choice(CLUSTER)]
+    assert evidence["choices"]["node_role_arn"] == [live.choice(NODE)]
+    assert evidence["choices"]["kms_key_arn"] == [live.choice(KEY)]
     assert [s["value"] for s in live.compatible_choices("second_subnet_id", evidence, {"subnet_id": "s1"})] == ["s2"]
     assert "image_id" not in evidence["choices"]
 
@@ -95,6 +102,31 @@ def test_failed_discovery_never_returns_old_or_sample_versions(aws):
     assert evidence["choices"]["subnet_id"]
 
 
+def test_arn_discovery_filters_wrong_account_and_key_properties(aws):
+    clients, _ = aws
+    clients["iam"].get_paginator = lambda op: SimpleNamespace(paginate=lambda: iter([{"Roles": [
+        dict(Arn=CLUSTER.replace("123456789012", "999999999999"),
+             AssumeRolePolicyDocument={"Statement": {"Effect": "Allow", "Action": "sts:AssumeRole", "Principal": {"Service": "eks.amazonaws.com"}}})]}]))
+    original = clients["kms"].describe_key
+    clients["kms"].describe_key = lambda **kw: {"KeyMetadata": dict(original(**kw)["KeyMetadata"], KeyState="Disabled")}
+    evidence = live.discover("aws-1", "ap-south-1", "Kubernetes")
+    assert evidence["choices"]["cluster_role_arn"] == []
+    assert evidence["choices"]["kms_key_arn"] == []
+
+
+def test_arn_discovery_denial_exposes_no_resource_or_secret(aws):
+    clients, _ = aws
+    def denied(*args):
+        raise RuntimeError("private details")
+    clients["iam"].get_paginator = denied
+    clients["kms"].get_paginator = denied
+    evidence = live.discover("aws-1", "ap-south-1", "Kubernetes")
+    for field in ("cluster_role_arn", "node_role_arn", "kms_key_arn"):
+        assert field not in evidence["choices"]
+        assert field in evidence["errors"]
+    assert "private details" not in str(evidence)
+
+
 def test_access_denial_identifies_permission_and_api_without_raw_message(aws):
     from botocore.exceptions import ClientError
     clients, _ = aws
@@ -107,19 +139,60 @@ def test_access_denial_identifies_permission_and_api_without_raw_message(aws):
     assert evidence["diagnostics"][0]["operation"] == "DescribeClusterVersions"
 
 
-def test_one_inaccessible_key_does_not_hide_usable_keys(aws):
+def test_manual_key_denial_is_safe_and_blocks_validation(aws):
     clients, _ = aws
     clients["kms"].list_keys = lambda **kwargs: {"Keys": [{"KeyId": "denied"}, {"KeyId": "allowed"}]}
     original = clients["kms"].describe_key
     def describe(**kwargs):
-        if kwargs["KeyId"] == "denied":
+        if kwargs["KeyId"] == KEY:
             raise RuntimeError("secret")
         return original(**kwargs)
     clients["kms"].describe_key = describe
-    evidence = live.discover("aws-1", "ap-south-1", "Kubernetes")
-    assert evidence["choices"]["kms_key_arn"][0]["value"] == "kms-key"
-    assert "kms:DescribeKey" in evidence["errors"]["kms_key_arn"]
-    assert "secret" not in str(evidence)
+    with pytest.raises(ValueError, match="kms:DescribeKey") as error:
+        live.validate_manual_arns(live.get_aws_session("aws-1", purpose="inventory"), "ap-south-1",
+                                  dict(cluster_role_arn=CLUSTER, node_role_arn=NODE, kms_key_arn=KEY), "123456789012")
+    assert "secret" not in str(error.value)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("cluster_role_arn", ""), ("node_role_arn", "not-an-arn"),
+    ("cluster_role_arn", CLUSTER.replace("123456789012", "999999999999")),
+    ("kms_key_arn", KEY.replace("ap-south-1", "us-east-1")),
+    ("kms_key_arn", KEY.replace("123456789012", "999999999999")),
+])
+def test_manual_arns_reject_malformed_or_wrong_target(aws, field, value):
+    inputs = dict(cluster_role_arn=CLUSTER, node_role_arn=NODE, kms_key_arn=KEY)
+    inputs[field] = value
+    with pytest.raises(ValueError):
+        live.validate_manual_arns(live.get_aws_session("aws-1", purpose="inventory"), "ap-south-1", inputs, "123456789012")
+
+
+@pytest.mark.parametrize("property,value", [("KeyState", "Disabled"), ("KeyManager", "AWS"),
+                                         ("KeySpec", "RSA_2048"), ("KeyUsage", "SIGN_VERIFY")])
+def test_manual_key_properties_are_verified(aws, property, value):
+    clients, _ = aws
+    key = clients["kms"].describe_key()["KeyMetadata"]
+    key[property] = value
+    clients["kms"].describe_key = lambda **kw: {"KeyMetadata": key}
+    with pytest.raises(ValueError, match="symmetric encryption key"):
+        live.validate_manual_arns(live.get_aws_session("aws-1", purpose="inventory"), "ap-south-1",
+                                  dict(cluster_role_arn=CLUSTER, node_role_arn=NODE, kms_key_arn=KEY), "123456789012")
+
+
+def test_role_trust_and_read_permissions_are_verified(aws):
+    clients, _ = aws
+    original = clients["iam"].get_role
+    role = original(RoleName="cluster")["Role"]
+    role["AssumeRolePolicyDocument"]["Statement"][0]["Principal"] = {"Service": "ec2.amazonaws.com"}
+    inputs = dict(cluster_role_arn=CLUSTER, node_role_arn=NODE, kms_key_arn=KEY)
+    with pytest.raises(ValueError, match="must trust eks"):
+        live.validate_manual_arns(live.get_aws_session("aws-1", purpose="inventory"), "ap-south-1", inputs, "123456789012")
+    def denied(**kw):
+        raise RuntimeError("private details")
+    clients["iam"].get_role = denied
+    with pytest.raises(ValueError, match="iam:GetRole") as error:
+        live.validate_manual_arns(live.get_aws_session("aws-1", purpose="inventory"), "ap-south-1", inputs, "123456789012")
+    assert "private details" not in str(error.value)
 
 
 def test_aks_reads_subscription_versions_values_not_arm_value(monkeypatch):
@@ -173,7 +246,7 @@ def test_plan_rechecks_hardware_and_rejects_wrong_eks_network(aws, monkeypatch):
         SupportedVirtualizationTypes=["hvm"], SupportedUsageClasses=["on-demand"])]}
     clients["ec2"].describe_instance_type_offerings = lambda **kw: {"InstanceTypeOfferings": [{"InstanceType": "worker"}]}
     candidate = row("worker", 2, 8, connection_id="aws-1")
-    inputs = dict(subnet_id="s1", second_subnet_id="s2", kubernetes_version="1.34", cluster_role_arn="cluster-role", node_role_arn="node-role", kms_key_arn="kms-key")
+    inputs = dict(subnet_id="s1", second_subnet_id="s2", kubernetes_version="1.34", cluster_role_arn=CLUSTER, node_role_arn=NODE, kms_key_arn=KEY)
     assert live.validate_live_inputs(candidate, {"kind": "Kubernetes"}, inputs)["status"] == "verified"
     with pytest.raises(ValueError, match="second subnet"):
         live.validate_live_inputs(candidate, {"kind": "Kubernetes"}, dict(inputs, second_subnet_id="s3"))

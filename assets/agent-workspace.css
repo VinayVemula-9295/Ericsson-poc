@@ -5,7 +5,7 @@
 .st-key-agent-composer [data-testid="stTextArea"]>div{border:0!important;box-shadow:none!important;background:#fff!important}
 .st-key-agent-conversation textarea[aria-label="Ask Intelligent Provisioning agent"]{background:#fff!important;border:0!important;box-shadow:none!important;font-size:1rem!important;resize:none}
 .st-key-agent-conversation textarea[aria-label="Ask Intelligent Provisioning agent"]::placeholder{color:#9299a5;opacity:1}
-.st-key-agent-composer:focus-within{border-color:#633bd3;box-shadow:0 0 0 3px #633bd315}
+.st-key-agent-composer:focus-within{border-color:#345d80;box-shadow:0 0 0 3px #345d8015}
 .st-key-agent-composer button{border-radius:24px!important;min-height:42px}
 .st-key-agent-conversation [data-testid="stForm"]:has(textarea[aria-label="Ask Intelligent Provisioning agent"]){display:flex;flex-direction:column}
 .st-key-kubernetes-sizing{border-top:1px solid #e0e6ef;margin-top:10px;padding-top:10px}
@@ -24,6 +24,8 @@
 .st-key-agent-workspace textarea{background:#fafbff!important;line-height:1.7!important}
 .st-key-agent-workspace [data-testid="stBaseButton-primary"],.st-key-agent-workspace [data-testid="stBaseButton-primaryFormSubmit"]{background:#633bd3;border-color:#633bd3;color:#fff;border-radius:8px}
 .st-key-agent-workspace [data-testid="stBaseButton-primary"]:hover,.st-key-agent-workspace [data-testid="stBaseButton-primaryFormSubmit"]:hover{background:#5030af;border-color:#5030af;color:#fff}
+.st-key-agent-workspace .st-key-agent-composer [data-testid="stBaseButton-primaryFormSubmit"]{background:#345d80;border-color:#345d80;color:#fff}
+.st-key-agent-workspace .st-key-agent-composer [data-testid="stBaseButton-primaryFormSubmit"]:hover{background:#294c69;border-color:#294c69;color:#fff}
 .st-key-agent-workspace button:focus-visible{outline:3px solid #a88ce9;outline-offset:3px}
 .st-key-agent-workspace [data-testid="stMetric"]{background:#fff;border-color:#e0e6ef;border-radius:10px;padding:12px;min-width:0}
 .st-key-agent-workspace [data-testid="stMetricValue"]{font-size:1.3rem}

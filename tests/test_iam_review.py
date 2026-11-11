@@ -12,6 +12,15 @@ review = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(review)
 
 
+def test_plan_role_reads_are_scoped_to_target_account():
+    policy = review.inventory_policy("333347372766")
+    reads = next(s for s in policy["Statement"] if s["Sid"] == "ValidateAccountPlanRoles")
+    assert reads == dict(Sid="ValidateAccountPlanRoles", Effect="Allow", Action="iam:GetRole",
+                         Resource="arn:aws:iam::333347372766:role/*")
+    with pytest.raises(ValueError):
+        review.inventory_policy("*")
+
+
 def test_bootstrap_preserves_external_id_and_rejects_broad_trust():
     controller = "arn:aws:iam::704298683641:role/CloudPilotReadTargetMetricsRole"
     trust = {"Statement": [{"Effect": "Allow", "Action": "sts:AssumeRole", "Principal": {"AWS": controller},

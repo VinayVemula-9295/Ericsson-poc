@@ -66,6 +66,8 @@ def _secret_name(provider: str, connection_id: str) -> str:
 def list_connections() -> list[dict[str, Any]]:
     """Return sanitized connection metadata; secret material is never returned."""
     rows = _read_all().get("connections", [])
+    from control_plane import visible_connection
+    rows = [row for row in rows if isinstance(row, dict) and visible_connection(row.get('connection_id'))]
     result = []
     for row in rows:
         if isinstance(row, dict):
@@ -76,6 +78,9 @@ def list_connections() -> list[dict[str, Any]]:
 def get_connection(connection_id: str) -> dict[str, Any] | None:
     if not connection_id:
         return None
+    from control_plane import visible_connection
+    if not visible_connection(connection_id):
+        raise ValueError('Customer access denied')
     for row in _read_all().get("connections", []):
         if isinstance(row, dict) and row.get("connection_id") == connection_id:
             return {k: v for k, v in row.items() if k not in {"secret", "credentials", "private_key", "client_secret"}}
@@ -133,7 +138,7 @@ def _build_aws_base_session(metadata: dict[str, Any], secret: dict[str, Any] | N
             raise ValueError("AWS access key credentials are incomplete.")
         return boto3.Session(aws_access_key_id=access_key, aws_secret_access_key=secret_key,
                              region_name=region)
-    return boto3.Session(region_name=region)
+    return boto3.Session(profile_name=metadata.get('aws_profile') or None, region_name=region)
 
 
 def _assumed_aws_session(metadata: dict[str, Any], secret: dict[str, Any] | None = None,
@@ -212,9 +217,10 @@ def test_provider_credentials(provider: str, metadata: dict[str, Any],
             client_id = str(metadata.get("client_id", "")).strip()
             subscription = str(metadata.get("subscription_id", "")).strip()
             client_secret = str(secret_payload.get("client_secret", ""))
-            if not all((tenant, client_id, subscription, client_secret)):
+            if not subscription or (metadata.get('credential_mode', 'client_secret') == 'client_secret' and not all((tenant, client_id, client_secret))):
                 raise ValueError("Azure Tenant ID, Client ID, Client Secret and Subscription ID are required.")
-            credential = ClientSecretCredential(tenant_id=tenant, client_id=client_id, client_secret=client_secret)
+            from dashboard_adapters import azure_credential
+            credential = azure_credential(metadata, secret_payload)
             subscription_info = SubscriptionClient(credential).subscriptions.get(subscription)
             resources = ResourceManagementClient(credential, subscription).resources.list()
             sample = []
@@ -238,12 +244,12 @@ def test_provider_credentials(provider: str, metadata: dict[str, Any],
         key_info = secret_payload.get("service_account_json")
         if isinstance(key_info, str):
             key_info = json.loads(key_info)
-        if not project_id or not isinstance(key_info, dict):
+        if not project_id or (metadata.get('credential_mode') != 'workload_identity' and not isinstance(key_info, dict)):
             raise ValueError("GCP Project ID and a complete service-account JSON key file are required.")
-        if metadata.get("service_account_email") and key_info.get("client_email") != metadata.get("service_account_email"):
+        if metadata.get("service_account_email") and isinstance(key_info, dict) and key_info.get("client_email") != metadata.get("service_account_email"):
             raise ValueError("The service-account email does not match the uploaded JSON key file.")
-        credentials = service_account.Credentials.from_service_account_info(
-            key_info, scopes=["https://www.googleapis.com/auth/cloud-platform.read-only"])
+        from dashboard_adapters import gcp_credential
+        credentials = gcp_credential(metadata, secret_payload)
         client = compute_v1.InstancesClient(credentials=credentials)
         sample = []
         for zone, scoped_list in client.aggregated_list(project=project_id, max_results=25):
@@ -257,14 +263,23 @@ def test_provider_credentials(provider: str, metadata: dict[str, Any],
             if len(sample) >= 25:
                 break
         return {"ok": True, "provider": provider, "project_id": project_id,
-                "service_account_email": key_info.get("client_email"),
+                "service_account_email": (key_info or {}).get("client_email"),
                 "sampled_resources": len(sample), "resources": sample,
                 "inventory_source": "Google Compute Engine aggregatedList API",
                 "checked_at": _now()}
     except Exception as exc:
         # Do not echo any credential material into the UI or logs.
         message = str(exc)
-        for value in secret_payload.values():
+        def secret_values(value):
+            if isinstance(value, dict):
+                for child in value.values():
+                    yield from secret_values(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from secret_values(child)
+            elif isinstance(value, str):
+                yield value
+        for value in secret_values(secret_payload):
             if isinstance(value, str) and value:
                 message = message.replace(value, "[REDACTED]")
         return {"ok": False, "provider": provider,
@@ -274,6 +289,9 @@ def test_provider_credentials(provider: str, metadata: dict[str, Any],
 def save_provider_connection(provider: str, name: str, metadata: dict[str, Any],
                               secret_payload: dict[str, Any] | None = None,
                               test_result: dict[str, Any] | None = None) -> dict[str, Any]:
+    from control_plane import enabled, require
+    if enabled():
+        require({'administrator'})
     provider_raw = provider.strip().lower()
     provider = {"aws": "AWS", "azure": "Azure", "gcp": "GCP"}.get(provider_raw, provider)
     if provider not in PROVIDERS:
@@ -290,7 +308,7 @@ def save_provider_connection(provider: str, name: str, metadata: dict[str, Any],
     secret_arn = existing.get("secret_arn")
     if secret_payload:
         secret_arn = _put_secret(provider, connection_id, secret_payload, secret_arn)
-    if provider in {"Azure", "GCP"} and not secret_arn:
+    if provider in {"Azure", "GCP"} and metadata.get('credential_mode') not in {'managed_identity', 'workload_identity'} and not secret_arn:
         raise ValueError(f"{provider} credentials must be stored in AWS Secrets Manager before saving the connection.")
     if provider == "AWS" and metadata.get("credential_mode") == "access_keys" and not secret_arn:
         raise ValueError("AWS access key credentials must be stored in AWS Secrets Manager.")

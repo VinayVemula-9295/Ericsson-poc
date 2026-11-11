@@ -276,7 +276,7 @@ def complete_turn(history: list[dict[str, Any]], system: str, tool_specs: list[d
 
     import boto3
     region = os.getenv("AWS_REGION", "ap-south-1")
-    model = os.getenv("BEDROCK_MODEL_ID", "apac.amazon.nova-lite-v1:0")
+    model = os.getenv("BEDROCK_MODEL_ID", "apac.amazon.nova-micro-v1:0")
     client = boto3.client("bedrock-runtime", region_name=region, config=Config(connect_timeout=5, read_timeout=60, retries={"max_attempts": 2, "mode": "standard"}))
     bedrock_messages: list[dict[str, Any]] = []
     pending_tool_results: list[dict[str, Any]] = []

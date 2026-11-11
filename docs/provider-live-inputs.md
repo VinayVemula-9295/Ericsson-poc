@@ -2,16 +2,18 @@
 
 Explicit worker-count prompts now use per-worker CPU/RAM minima and preserve the
 requested count. The form offers worker count instead of inferred pod replicas in
-this mode. Lookup errors identify denied permissions and API operations; partial
-KMS failures retain other usable keys. See [Demo verification and required roles](demo-provisioning-verification.md).
+this mode. Lookup errors identify denied permissions and API operations.
+See [Demo verification and required roles](demo-provisioning-verification.md).
 
-Agent Advanced options contain only the three provider regions. Use configuration
+Agent Advanced options contain searchable region dropdowns fetched from official
+public AWS, Azure and GCP region tables, cached for six hours. A published region
+does not establish account eligibility or capacity. Use configuration
 opens the matching provider's tested-account dropdown in Terraform inputs, for
 both servers and managed Kubernetes. AWS accounts never appear under Azure or
 GCP configurations. Configurations compared without an account can attach one here.
 
-Every newly selected configuration, account change and explicit Refresh live
-values action fetches account-scoped choices. Ordinary field edits reuse that
+Every newly selected configuration, account change or account retest fetches
+account-scoped choices. Ordinary field edits reuse that
 form's evidence; generating a plan performs a fresh backend read. Changes to
 accounts, resources, workload sizing, environment or TTL invalidate the displayed
 saved plan. Discovery errors clear previous values and identify unavailable fields.
@@ -20,7 +22,7 @@ bypass the backend's live validation.
 
 | Provider | Live server inputs | Additional managed Kubernetes inputs |
 | --- | --- | --- |
-| AWS | Amazon-published x86 images, regional subnets and security groups | EKS versions, subnets in two availability zones of the same VPC, EKS/EC2-trusting IAM roles, enabled customer KMS encryption keys |
+| AWS | Amazon-published x86 images, regional subnets and security groups | EKS versions and subnets in two availability zones of the same VPC; verified IAM role and KMS key ARN choices with manual override |
 | Azure | Resource groups, regional VNet subnets, NSGs and Canonical/Windows platform image versions | Non-preview AKS patch versions for the subscription and region |
 | GCP | Regional subnets, active zones and versioned provider images | GKE versions supported by both control plane and nodes, VPC networks, subnet secondary ranges and enabled project service accounts |
 
@@ -28,6 +30,10 @@ Names, SSH public keys/usernames, and the GKE master CIDR remain user inputs.
 Existing resources are referenced by the generated Terraform configuration; this
 workflow does not create a VPC, subnet, IAM role or encryption key on form entry.
 Server images are independently verified for provider, OS and architecture.
+Manual IAM role ARNs are checked with `iam:GetRole` for the selected account,
+exact ARN and appropriate service trust. The manual KMS key ARN is checked with
+`kms:DescribeKey` for account, region and enabled customer-managed symmetric
+encryption properties. Account-scoped discovery offers compatible existing roles and enabled customer-managed symmetric keys. Manual entry remains available; every plan freshly validates the exact chosen ARNs. Empty lists or denied reads never create resources or substitute values.
 Regional offerings and supported versions do not establish spare capacity,
 quota headroom, IAM grants, pod/IP capacity or network reachability.
 
@@ -41,7 +47,8 @@ Worker compute estimates exclude control-plane, storage and networking charges.
 AWS discovery uses the selected connection's inventory role. The supplemental
 read-only [policy](../iam-plan-inputs-policy.json) covers EC2 types, offerings,
 images, subnets, security groups, `eks:DescribeClusterVersions`, `iam:ListRoles`,
-`kms:ListKeys` and `kms:DescribeKey`. The bootstrap script's generated inventory
+`kms:ListKeys` and `kms:DescribeKey`. Manual ARN validation additionally requires
+`iam:GetRole`; IAM/KMS listing actions populate the optional verified ARN choices. The bootstrap script's generated inventory
 policy includes these reads for future explicitly requested account setup.
 Existing account policies are not changed by this source update. The boto3 and
 botocore minimums are raised to 1.43 to include the EKS version API used here.

@@ -29,7 +29,6 @@ def comparison_rows(connections, inventory, ec2_costs):
 def render_comparison(connections, inventory, ec2_costs):
     rows = comparison_rows(connections, inventory, ec2_costs)
     st.caption("MULTI-CLOUD OVERVIEW")
-    st.caption("AWS uses current controller evidence. Azure and Google Cloud are illustrative connected accounts with sample values.")
     for col, row, color, mark in zip(st.columns(3), rows,
                                      ["#c77813", "#0078d4", "#4285f4"], ["AWS", "AZ", "GC"]):
         with col, st.container(border=True):

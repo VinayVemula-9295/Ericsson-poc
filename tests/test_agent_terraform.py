@@ -137,7 +137,7 @@ def runner(monkeypatch, tmp_path):
         if provider == "AWS":
             inputs["execution_role_arn"] = runtime["target_role_arn"]
             if kind == "Kubernetes":
-                inputs.update(cluster_role_arn="arn:aws:iam::123456789012:role/cluster",
+                inputs.update(name="iipp-test-cluster", cluster_role_arn="arn:aws:iam::123456789012:role/cluster",
                               node_role_arn="arn:aws:iam::123456789012:role/node",
                               kms_key_arn="arn:aws:kms:ap-south-1:123456789012:key/01234567-89ab-cdef-0123-456789abcdef",
                               second_subnet_id="second-subnet")

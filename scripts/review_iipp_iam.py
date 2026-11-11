@@ -15,7 +15,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from configure_iipp_terraform import (CLUSTER_ROLE, NODE_ROLE, execution_policy,
-                                     role_snapshot, service_trust, verify_identity)
+                                     role_snapshot, service_trust, verify_identity, compatible_service_trust)
 from configure_iipp_test_accounts import inventory_policy
 
 TARGETS = {"333347372766": "poc", "695729002971": "test"}
@@ -64,6 +64,7 @@ def main():
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--key-arn")
     parser.add_argument("--instance-role-arn")
+    parser.add_argument("--allowed-instance-families", default="t3", help="Comma-separated families or *; does not remove account, region or ownership controls")
     parser.add_argument("--external-id-file", type=Path, help="Private JSON containing the existing connection external_id; never printed")
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args()
@@ -122,10 +123,10 @@ def main():
         return
     environment = TARGETS[args.account]
     key = args.key_arn or f"arn:aws:kms:{args.region}:{args.account}:key/REPLACE_WITH_VERIFIED_KEY_ID"
-    policy = execution_policy(args.account, args.region, environment, key, args.instance_role_arn)
+    policy = execution_policy(args.account, args.region, environment, key, args.instance_role_arn, args.allowed_instance_families)
     save(output / "execution-policy.json", policy)
     save(output / "server-execution-policy.json", server_policy(policy))
-    save(output / "inventory-policy.json", inventory_policy())
+    save(output / "inventory-policy.json", inventory_policy(args.account))
     save(output / "service-role-attachments.json", ATTACHMENTS)
     for role, service in ((CLUSTER_ROLE, "eks.amazonaws.com"), (NODE_ROLE, "ec2.amazonaws.com")):
         save(output / (role + "-trust.json"), service_trust(service))
@@ -156,7 +157,7 @@ def main():
     # Validate all existing service trust before the first write.
     for role, service in ((CLUSTER_ROLE, "eks.amazonaws.com"), (NODE_ROLE, "ec2.amazonaws.com")):
         snapshot = snapshots[role]
-        if snapshot.get("existed") is not False and snapshot["role"]["AssumeRolePolicyDocument"].get("Statement") != service_trust(service)["Statement"]:
+        if snapshot.get("existed") is not False and not compatible_service_trust(snapshot["role"]["AssumeRolePolicyDocument"], service):
             raise ValueError(f"Existing {role} trust requires review")
     if snapshots[ROLES[1]].get("existed") is False:
         iam.create_role(RoleName=ROLES[1], AssumeRolePolicyDocument=json.dumps(trust),
@@ -174,7 +175,7 @@ def main():
             iam.get_role(RoleName=role)
         except iam.exceptions.NoSuchEntityException:
             iam.create_service_linked_role(AWSServiceName=service)
-    iam.put_role_policy(RoleName=ROLES[0], PolicyName="IIPPPlanInputReads", PolicyDocument=json.dumps(inventory_policy()))
+    iam.put_role_policy(RoleName=ROLES[0], PolicyName="IIPPPlanInputReads", PolicyDocument=json.dumps(inventory_policy(args.account)))
     # A separate server policy avoids replacing an existing EKS policy without a KMS key.
     iam.put_role_policy(RoleName=ROLES[1], PolicyName="Innominds-IIPP-Permissions" if args.key_arn else "IIPPServerLifecycle",
                         PolicyDocument=json.dumps(proposed))

@@ -13,6 +13,29 @@ DOCKER_RUN_ARGS=()
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Fail before backup/build/container replacement if authenticated access is incomplete.
+CONTROL_PLANE_ENABLED="${CONTROL_PLANE_ENABLED:-false}"
+if [ "$CONTROL_PLANE_ENABLED" = "true" ]; then
+  CONTROL_PLANE_USERS_HOST_FILE="${CONTROL_PLANE_USERS_HOST_FILE:-$HOME/.cloudpilot-control-plane-users.json}"
+  if [ ! -s "$CONTROL_PLANE_USERS_HOST_FILE" ]; then
+    echo "Configure the protected control-plane user registry before enabling sign-in." >&2
+    exit 1
+  fi
+  python3 - "$CONTROL_PLANE_USERS_HOST_FILE" <<'PYUSERS'
+import json, sys
+from pathlib import Path
+users = json.loads(Path(sys.argv[1]).read_text())
+assert any(u.get('role') == 'administrator' and not u.get('disabled') and
+           len(bytes.fromhex(u.get('salt', ''))) >= 16 and
+           len(bytes.fromhex(u.get('password_hash', ''))) == 32
+           for u in users.values()), 'An active hashed administrator identity is required'
+PYUSERS
+  DOCKER_RUN_ARGS+=(-v "$CONTROL_PLANE_USERS_HOST_FILE:/run/secrets/control-plane-users.json:ro")
+elif [ -z "${IIPP_ADMIN_USERNAME:-}" ] || [ -z "${IIPP_ADMIN_PASSWORD_HASH:-}" ] || [ -z "${IIPP_ADMIN_SALT:-}" ]; then
+  echo "Configure admin access with tools/setup_admin.py and load its environment before deployment." >&2
+  exit 1
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker was not found. Install/start Docker before deploying." >&2
   exit 1
@@ -140,7 +163,7 @@ if ! sudo docker run -d \
   -e GCP_PRICING_REGION="${GCP_PRICING_REGION:-asia-south1}" \
   -e LLM_PROVIDER="${LLM_PROVIDER:-bedrock}" \
   -e BEDROCK_ENABLED="${BEDROCK_ENABLED:-true}" \
-  -e BEDROCK_MODEL_ID="${BEDROCK_MODEL_ID:-apac.amazon.nova-lite-v1:0}" \
+  -e BEDROCK_MODEL_ID="${BEDROCK_MODEL_ID:-apac.amazon.nova-micro-v1:0}" \
   -e OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}" \
   -e OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.openai.com/v1}" \
   -e ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}" \
@@ -148,6 +171,13 @@ if ! sudo docker run -d \
   -e LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-local-model}" \
   -e LOCAL_LLM_BASE_URL="${LOCAL_LLM_BASE_URL:-}" \
   -e ENABLE_APPROVAL_EXECUTION="${ENABLE_APPROVAL_EXECUTION:-false}" \
+  -e CONTROL_PLANE_ENABLED="$CONTROL_PLANE_ENABLED" \
+  -e CONTROL_PLANE_USERS_FILE=/run/secrets/control-plane-users.json \
+    -e IIPP_ADMIN_USERNAME="${IIPP_ADMIN_USERNAME:-}" \
+    -e IIPP_ADMIN_PASSWORD_HASH="${IIPP_ADMIN_PASSWORD_HASH:-}" \
+    -e IIPP_ADMIN_SALT="${IIPP_ADMIN_SALT:-}" \
+    -e IIPP_SESSION_IDLE_SECONDS="${IIPP_SESSION_IDLE_SECONDS:-1800}" \
+    -e IIPP_SESSION_MAX_SECONDS="${IIPP_SESSION_MAX_SECONDS:-28800}" \
   -e IIPP_KUBERNETES_TIMEOUT_SECONDS="${IIPP_KUBERNETES_TIMEOUT_SECONDS:-3600}" \
   -e IIPP_SERVER_TIMEOUT_SECONDS="${IIPP_SERVER_TIMEOUT_SECONDS:-900}" \
   -e ENABLE_TERRAFORM_WORKFLOW="${ENABLE_TERRAFORM_WORKFLOW:-false}" \

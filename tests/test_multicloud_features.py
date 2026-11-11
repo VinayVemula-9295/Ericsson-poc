@@ -433,7 +433,7 @@ def test_aws_discovery_reads_specs_from_paginated_live_ec2_apis_without_sku_cata
 def test_agent_ui_explains_exact_match_and_nearest_alternatives():
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parents[1] / "app.py").read_text()
+    source = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
     assert "Exact match check and closest configurations" in source
     assert "hardware_match" in source
     assert "Undersized alternatives are shown for comparison" in source
@@ -492,7 +492,7 @@ def test_aws_create_selection_requires_explicit_region_offering_and_request_fit(
     import ast
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parents[1] / "app.py").read_text()
+    source = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
     assert 'option.get("offered_in_target_location") is True' in source
     assert "disabled=not enabled" not in source[source.find('Create AWS infrastructure — prepare saved plan')-700:source.find('Create AWS infrastructure — prepare saved plan')+100]
     assert "if not enabled:" in source[source.find('Create AWS infrastructure — prepare saved plan'):]
@@ -532,7 +532,7 @@ def test_aws_offering_permission_error_preserves_context_but_blocks_verified_sel
 
 def test_work_view_separates_controller_and_selected_target_inventory_with_cost_estimate():
     from pathlib import Path
-    source = Path(__file__).resolve().parents[1].joinpath("app.py").read_text()
+    source = Path(__file__).resolve().parents[1].joinpath("app.py").read_text(encoding="utf-8")
     assert 'heading.subheader("Connected accounts")' in source
     assert 'st.subheader("Controller account resources · estimated monthly compute cost")' in source
     assert '"Estimated compute / month (USD)"' in source
@@ -547,7 +547,7 @@ def test_work_view_separates_controller_and_selected_target_inventory_with_cost_
 
 def test_agent_no_longer_renders_connected_aws_workload_monitor_or_strategy_budget_controls():
     from pathlib import Path
-    source = Path(__file__).resolve().parents[1].joinpath("app.py").read_text()
+    source = Path(__file__).resolve().parents[1].joinpath("app.py").read_text(encoding="utf-8")
     agent_view = source.split("def render_agent() -> None:", 1)[1].split("PRICE_CACHE_TTL_SECONDS", 1)[0]
     assert "Connected AWS workload monitor" not in agent_view
     assert "get_metric_series" not in agent_view

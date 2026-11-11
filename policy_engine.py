@@ -13,9 +13,17 @@ def _csv_env(name: str, default: str) -> set[str]:
     return {part.strip() for part in raw.split(",") if part.strip()}
 
 
-def evaluate_aws_provision_request(payload: dict[str, Any], runtime: dict[str, Any]) -> dict[str, Any]:
+def validate_aws_launch(region: str, instance_type: str) -> None:
+    """Shared comparison/runner allowlist check; does not grant execution approval."""
     allowed_regions = _csv_env("IIPP_ALLOWED_AWS_REGIONS", "ap-south-1")
     allowed_families = _csv_env("IIPP_ALLOWED_AWS_INSTANCE_FAMILIES", "t3")
+    if region not in allowed_regions:
+        raise ValueError(f"Policy denied region {region}. Allowed regions: {', '.join(sorted(allowed_regions))}.")
+    if "*" not in allowed_families and instance_type.split(".", 1)[0] not in allowed_families:
+        raise ValueError(f"Policy denied instance family {instance_type.split('.', 1)[0]}. Allowed families: {', '.join(sorted(allowed_families))}.")
+
+
+def evaluate_aws_provision_request(payload: dict[str, Any], runtime: dict[str, Any]) -> dict[str, Any]:
     allowed_envs = {"poc", "test"}
     connection_name = str(runtime.get("connection_name", "")).lower()
     account_environment = ("test" if "test" in connection_name else "poc"
@@ -24,10 +32,7 @@ def evaluate_aws_provision_request(payload: dict[str, Any], runtime: dict[str, A
     instance_type = str(payload.get("instance_type", ""))
     family = instance_type.split(".", 1)[0]
     environment = str(payload.get("environment", "poc")).lower()
-    if region not in allowed_regions:
-        raise ValueError(f"Policy denied region {region}. Allowed regions: {', '.join(sorted(allowed_regions))}.")
-    if family not in allowed_families:
-        raise ValueError(f"Policy denied instance family {family}. Allowed families: {', '.join(sorted(allowed_families))}.")
+    validate_aws_launch(region, instance_type)
     if environment not in allowed_envs:
         raise ValueError("Policy denied environment. Only POC and TEST are allowed.")
     if not account_environment or environment != account_environment:

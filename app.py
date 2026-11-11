@@ -12,6 +12,13 @@ import plotly.express as px
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
+# Docker supplies its writable /data volume. Windows local runs need a
+# project-local directory instead of the protected C:\data path.
+os.environ.setdefault(
+    "DATA_DIR",
+    "/data" if os.name != "nt" else str(Path(__file__).resolve().parent / ".local-data"),
+)
+
 from agent import invoke_agent, sanitize_agent_answer, explain_comparison_evidence
 from aws_data import (
     clear_price_cache,
@@ -34,11 +41,15 @@ from provider_ui import render_provider_configuration
 from workspace_ui import render_agent_intro, render_decision_sidebar, render_execution_methods
 
 PRODUCT_NAME = "Intelligent Provisioning Platform"
-st.set_page_config(page_title=PRODUCT_NAME, layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title=PRODUCT_NAME, layout="wide", initial_sidebar_state="auto")
+
+from shell_ui import require_demo_login, brand, sidebar_profile, header_profile
+st.markdown('<style>' + (Path(__file__).parent / 'assets' / 'platform.css').read_text(encoding='utf-8') + '</style>', unsafe_allow_html=True)
+require_demo_login()
 
 REGION = os.getenv("AWS_REGION", "ap-south-1")
 TARGET_INSTANCE_ID = os.getenv("TARGET_INSTANCE_ID", "")
-DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
+DATA_DIR = Path(os.environ["DATA_DIR"])
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 TREND_EVENT_PATH = DATA_DIR / "latest_cpu_trend_event.json"
 LATEST_PLAN_PATH = DATA_DIR / "latest_infrastructure_plan.json"
@@ -57,12 +68,13 @@ div[data-testid="stMetric"] {border: 1px solid var(--secondary-background-color)
 .small-note {color: var(--text-color); opacity: .75; font-size: .86rem;}
 [data-testid="stSidebarUserContent"] {padding: 1.5rem 1rem;}
 [data-testid="stSidebar"] [data-testid="stImage"] img {max-width: 100%; height: auto;}
-.platform-title {font-size: 1.35rem; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere;}
+.platform-title {font-size: 1.6rem; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere;}
+#MainMenu, [data-testid="stMainMenu"] {display: none;}
 .st-key-iipp-global-topbar [data-testid="stCaptionContainer"] {overflow-wrap: anywhere;}
 .st-key-iipp-global-topbar [data-testid="stColumn"] {min-width: 0;}
 
 .st-key-iipp-global-topbar {border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 22px; margin-bottom: 24px; background: #fff; color: #142d4e;}
-.st-key-iipp-global-topbar .platform-title {border-left: 1px solid #dbe4ef; padding-left: 22px; font-size: 1.05rem; font-weight: 400; line-height: 1.6;}
+.st-key-iipp-global-topbar .platform-title {border-left: 1px solid #dbe4ef; padding-left: 22px; font-size: 1.6rem; font-weight: 700; line-height: 1.4;}
 .st-key-iipp-global-topbar [data-testid="stCaptionContainer"] {font-size: .7rem; letter-spacing: .1em; color: #64748b;}
 .cloud-card-heading {display: flex; align-items: center; gap: 12px; margin-bottom: 18px; font-size: 1.15rem;}
 .cloud-mark {display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 40px; border: 1px solid; border-radius: 10px; font-size: .8rem; font-weight: 700;}
@@ -82,9 +94,29 @@ div[data-testid="stForm"]:has([aria-label="Infrastructure requirements"]) textar
 }
 @media (max-width: 640px) {
     [data-testid="stMainBlockContainer"] {padding: 4.5rem 1rem 2rem;}
-    .platform-title {font-size: 1.15rem;}
+    .platform-title, .st-key-iipp-global-topbar .platform-title {font-size: 1.25rem; font-weight: 700;}
     div[data-testid="stForm"]:has([aria-label="Infrastructure requirements"]) {padding: .75rem;}
 }
+
+/* Reference navigation, selectors and composer. Keep controls native and accessible. */
+[data-testid="stSidebar"] {background: #fff; border-right: 1px solid #e2e8f0;}
+.sidebar-product {color:#142d4e; font-size:1.6rem; font-weight:700; line-height:1.4; overflow-wrap:anywhere; margin:12px 0 26px;}
+@media (max-width:640px) {.sidebar-product {font-size:1.25rem;}}
+[data-testid="stSidebar"] [data-testid="stRadio"] label {padding:18px 16px; margin:4px 0; border-radius:14px; color:#142d4e; font-size:1.15rem; width:100%;}
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {background:#e9f0f7; box-shadow:inset 4px 0 #345d80; font-weight:700; color:#345d80;}
+[data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] {width:100%; align-items:stretch;}
+[data-testid="stSidebar"] [data-testid="stRadioOption"] {display:flex; width:100%!important; box-sizing:border-box;}
+[data-testid="stSidebar"] [data-testid="stRadioOption"] > div > div:first-child {display:none;}
+[data-testid="stSidebar"] [data-testid="stRadioOption"] p {font-size:1.15rem; line-height:1.6;}
+.st-key-iipp-global-topbar [data-testid="stWidgetLabel"] {color:#708299;}
+.st-key-iipp-global-topbar [data-baseweb="select"] > div {background:#fff; border-color:#dbe4ef; border-radius:12px; min-height:56px;}
+.st-key-iipp-global-topbar .react-aria-ComboBox > [role="group"] {background:#fff; border:1px solid #dbe4ef; border-radius:12px; min-height:56px; align-items:center;}
+.st-key-iipp-global-topbar [role="combobox"] {background:transparent; border:0; font-size:1rem;}
+.st-key-iipp-global-configure button, .st-key-agent-composer button, .st-key-apply-terraform-plan button {background:#345d80; border-color:#345d80; color:#fff;}
+.st-key-iipp-global-configure button {min-height:56px; border-radius:12px;}
+.st-key-agent-composer {background:#fff; border:1px solid #cbd5e1; border-radius:32px; padding:18px 24px; margin-top:4px; box-shadow:0 5px 20px #17344c05;}
+.st-key-agent-composer textarea {background:#fff; border:0; box-shadow:none;}
+.st-key-agent-composer button {border-radius:28px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -291,7 +323,7 @@ def _render_cloud_account_summary(inventory: dict[str, Any], ec2_costs: dict[str
 
 def _active_cloud_selection() -> tuple[str, str | None, dict[str, Any] | None]:
     """Return the provider/account chosen in the global top bar."""
-    provider = str(st.session_state.get("iipp_active_provider", "AWS")).upper()
+    provider = str(st.session_state.get("iipp_active_provider", "AWS"))
     connection_id = st.session_state.get("iipp_active_connection_id")
     connection = get_connection(str(connection_id)) if connection_id else None
     if connection and connection.get("provider") != provider:
@@ -301,34 +333,29 @@ def _active_cloud_selection() -> tuple[str, str | None, dict[str, Any] | None]:
 
 
 def _render_global_topbar() -> None:
-    """Single polished provider/account bar shared by Telemetry and Agent."""
+    """Shared cloud and account selectors for every workspace."""
     connected = list_connections()
     requested_provider = st.session_state.pop("iipp_provider_after_save", None)
     if requested_provider in {"AWS", "Azure", "GCP"}:
         st.session_state["iipp_active_provider"] = requested_provider
-    requested_connection_id = st.session_state.pop("iipp_connection_after_save", None)
+    requested_connection_id = st.session_state.pop("iipp_connection_after_save", None) or st.session_state.get('iipp_active_connection_id')
 
     with st.container(border=True, key="iipp-global-topbar"):
-        logo_col, title_col, context_col, action_col = st.columns(
-            [1.25, 2.4, 3.0, 1.1], vertical_alignment="center"
-        )
-        with logo_col:
-            if LOGO_PATH.exists():
-                st.image(str(LOGO_PATH), width=180)
-        with title_col:
-            st.markdown('<div class="platform-title">Intelligent Provisioning<br><strong>Platform</strong></div>', unsafe_allow_html=True)
-        with context_col:
-            st.caption("PROVISIONING TARGET")
-            context_heading = st.empty()
-            account_switcher = st.popover("Switch cloud / account", use_container_width=True)
-        with account_switcher:
-            provider = st.selectbox("Cloud provider", ["AWS", "Azure", "GCP"], key="iipp_active_provider")
+        provider_col, account_col, action_col = st.columns([3, 6, 1.2], vertical_alignment="bottom")
+        with provider_col:
+            providers = ['AWS', 'Azure', 'GCP']
+            provider = st.selectbox("Cloud provider", providers,
+                                    index=providers.index(st.session_state.get('iipp_active_provider', 'AWS')),
+                                    key="cloud-provider-widget")
+            st.session_state['iipp_active_provider'] = provider
 
         provider_rows = [row for row in connected if row.get("provider") == provider]
         provider_rows.sort(key=lambda row: (row.get("connection_status") != "CONNECTED", row.get("name", "")))
         account_labels: dict[str, str] = {}
         for row in provider_rows:
-            account_id = row.get("account_id") or row.get("subscription_id") or row.get("project_id") or "identity pending"
+            meta = row.get("metadata", {})
+            account_id = (row.get("account_id") or row.get("subscription_id") or meta.get("subscription_id")
+                          or row.get("project_id") or meta.get("project_id") or "identity pending")
             label = f"{row.get('name')} · {account_id} · {row.get('connection_status', 'UNKNOWN')}"
             account_labels[label] = row.get("connection_id", "")
         account_options = list(account_labels) or [f"No {provider} connection · use Configure"]
@@ -341,32 +368,21 @@ def _render_global_topbar() -> None:
             connected_label = next((label for label in account_options if label.endswith("CONNECTED")), account_options[0])
             st.session_state[account_key] = connected_label
 
-        selector_label = {"AWS": "AWS account", "Azure": "Azure subscription", "GCP": "GCP project"}[provider]
-        with account_switcher:
+        with account_col:
             selected_label = st.selectbox(
-                selector_label, account_options, key=account_key,
-                help="This selection is shared by the Telemetry and Agent workspaces.",
+                "Account / Subscription / Project", account_options, key=account_key,
+                help="This selection is shared across workspaces.",
             )
         selected_id = account_labels.get(selected_label)
         selected_row = next((row for row in provider_rows if row.get("connection_id") == selected_id), None)
         st.session_state["iipp_active_connection_id"] = (
             selected_id if selected_row and selected_row.get("connection_status") == "CONNECTED" else None
         )
-        context_heading.markdown(f"**{provider} / {selected_row.get('name', 'Connected account') if selected_row else 'No connected account'}**")
-        if selected_row:
-            meta = selected_row.get("metadata", {})
-            identity = selected_row.get("account_id") or selected_row.get("subscription_id") or meta.get("subscription_id") or selected_row.get("project_id") or meta.get("project_id", "Identity pending")
-            with context_col:
-                st.caption(f"{identity} · {selected_row.get('region') or meta.get('region') or 'Region selected in configuration'} · {selected_row.get('connection_status', 'UNKNOWN')}")
-        with action_col:
-            if st.button("Configure", key="iipp-global-configure", type="secondary", use_container_width=True):
-                st.session_state["iipp_provider_select"] = provider
-                st.session_state["iipp_open_provider_config_dialog"] = True
         if selected_row and selected_row.get("connection_status") != "CONNECTED":
             st.warning("This connection is saved but not verified. Test it in Configure before using live account data.")
 
 
-@st.dialog("Configure cloud provider", width="large")
+@st.dialog("Control Center", width="large")
 def _show_provider_config_dialog() -> None:
     render_provider_configuration()
 
@@ -717,10 +733,11 @@ def _analyze_event(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def render_agent() -> None:
-    """Prompt-driven cloud comparison and provisioning; workload telemetry lives in Telemetry."""
+    """Prompt-driven cloud comparison and provisioning; workload telemetry lives in Home."""
     if st.session_state.get("iipp_pending_destroy_deployment_id"):
         return
     st.markdown(f"<style>{(ASSETS_DIR / 'agent-workspace.css').read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+    st.markdown(f"<style>{(ASSETS_DIR / 'platform.css').read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
     with st.container(key="agent-workspace"):
         with st.container(key="agent-conversation"):
             _render_infrastructure_request_flow()
@@ -1564,7 +1581,7 @@ def render_settings() -> None:
         {"Setting": "AWS_REGION", "Current value": REGION, "Purpose": "AWS live telemetry, inventory and resource region"},
         {"Setting": "TARGET_INSTANCE_ID", "Current value": TARGET_INSTANCE_ID or "not configured", "Purpose": "QuickCart workload instance monitored by the threshold agent"},
         {"Setting": "LLM_PROVIDER", "Current value": os.getenv("LLM_PROVIDER", "bedrock"), "Purpose": "bedrock, openai, anthropic, gemini, or local OpenAI-compatible endpoint"},
-        {"Setting": "BEDROCK_MODEL_ID", "Current value": os.getenv("BEDROCK_MODEL_ID", "apac.amazon.nova-lite-v1:0"), "Purpose": "Configured Bedrock Converse model / inference profile"},
+        {"Setting": "BEDROCK_MODEL_ID", "Current value": os.getenv("BEDROCK_MODEL_ID", "apac.amazon.nova-micro-v1:0"), "Purpose": "Configured Bedrock Converse model / inference profile"},
         {"Setting": "OPENAI_MODEL", "Current value": os.getenv("OPENAI_MODEL", "gpt-4o-mini") if os.getenv("LLM_PROVIDER", "bedrock").lower() == "openai" else "not selected", "Purpose": "Optional OpenAI-compatible chat model; secret key is never displayed"},
         {"Setting": "ANTHROPIC_MODEL", "Current value": os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001") if os.getenv("LLM_PROVIDER", "bedrock").lower() == "anthropic" else "not selected", "Purpose": "Optional Anthropic Claude tool-using model; may be overridden for account access"},
         {"Setting": "GEMINI_MODEL", "Current value": os.getenv("GEMINI_MODEL", "gemini-3.8-flash") if os.getenv("LLM_PROVIDER", "bedrock").lower() in {"gemini", "google"} else "not selected", "Purpose": "Optional Google Gemini tool-using model; may be overridden for account access"},
@@ -1577,29 +1594,72 @@ def render_settings() -> None:
     st.warning("Do not enable Terraform/apply unless the dashboard security-group ingress is restricted to authorized reviewer IPs and IAM permissions are reviewed. All provisioning must pass through Terraform. Azure/GCP Terraform apply stacks are not included in this AWS-first POC release.")
 
 
-if st.session_state.get("navigation") in {"Work", "Deployments"}:
-    st.session_state["navigation"] = {"Work": "Telemetry", "Deployments": "Deployment"}[st.session_state["navigation"]]
-
-# Page changes requested by in-page actions are applied before the navigation widget is instantiated.
-if st.session_state.pop("iipp_navigate_to_agent", False):
-    st.session_state["navigation"] = "Agent"
-if st.session_state.pop("iipp_navigate_to_work", False):
-    st.session_state["navigation"] = "Telemetry"
-
+from dashboard_ui import render as render_dashboard
+st.markdown("<style>" + (ASSETS_DIR / 'platform.css').read_text(encoding='utf-8') + "</style>", unsafe_allow_html=True)
+aliases = {'Work': 'Dashboard', 'Home': 'Dashboard', 'Agent': 'Provisioning Agent', 'Deployments': 'Deployment', 'Telemetry': 'Dashboard'}
+old_page = st.session_state.get('navigation', 'Dashboard')
+st.session_state['navigation'] = aliases.get(old_page, old_page)
+if st.session_state.pop('iipp_navigate_to_agent', False):
+    st.session_state['requested-page'] = 'Provisioning Agent'
+if st.session_state.pop('iipp_navigate_to_work', False):
+    st.session_state['requested-page'] = 'Dashboard'
+requested = st.session_state.pop('requested-page', None)
+if requested:
+    st.session_state['navigation'] = requested
+    st.session_state['operational-screen'] = False
 with st.sidebar:
-    page = st.radio("Workspace", ["Agent", "Telemetry", "Deployment"], index=0, key="navigation")
-    st.divider()
-
-_render_global_topbar()
-
-if st.session_state.pop("iipp_open_provider_config_dialog", False):
+    from control_plane import enabled as control_plane_enabled
+    pages = ['Dashboard', 'Provisioning Agent', 'Deployment']
+    if control_plane_enabled():
+        pages.append('Approvals & schedules')
+    page = st.radio('Workspace', pages, key='navigation',
+                    label_visibility='collapsed', on_change=lambda: st.session_state.update({'operational-screen': False}))
+    sidebar_profile()
+# Provider/account identity is stored independently of transient dialog widgets.
+saved_provider = st.session_state.get('iipp_provider_after_save')
+saved_connection = st.session_state.get('iipp_connection_after_save')
+if saved_provider in {'AWS', 'Azure', 'GCP'}:
+    st.session_state['iipp_active_provider'] = saved_provider
+    if saved_connection:
+        st.session_state['iipp_active_connection_id'] = saved_connection
+with st.container(key='platform-header'):
+    heading, control, profile_col = st.columns([7, 2, 1], vertical_alignment='center')
+    with heading:
+        brand()
+    with control:
+        if st.button('Configure Cloud', key='control-configure', type='primary', use_container_width=True):
+            st.session_state['iipp_open_provider_config_dialog'] = True
+    with profile_col, st.container(key='header-profile'):
+        header_profile()
+from control_plane import enabled as governed_control_plane
+if governed_control_plane():
+    from control_plane_ui import context_selector
+    context_selector()
+if st.session_state.pop('iipp_open_provider_config_dialog', False):
     _show_provider_config_dialog()
-if st.session_state.pop("iipp_open_connection_success_dialog", False):
+if st.session_state.pop('iipp_open_connection_success_dialog', False):
     _show_connection_success_dialog()
-
-if page == "Telemetry":
-    render_telemetry()
-elif page == "Deployment":
+if st.session_state.get('operational-screen'):
+    if st.button('Back to dashboard', key='close-workload-telemetry'):
+        st.session_state['operational-screen'] = False
+        st.rerun()
+    from control_plane import enabled, require
+    if enabled():
+        try:
+            require({'administrator'})
+        except ValueError:
+            st.info('Controller monitoring is available to administrators.')
+        else:
+            render_telemetry()
+    else:
+        st.subheader('Workload telemetry')
+        render_telemetry()
+elif page == 'Approvals & schedules':
+    from control_plane_ui import render as render_control_plane
+    render_control_plane()
+elif page == 'Dashboard':
+    render_dashboard()
+elif page == 'Deployment':
     from deployment_history_ui import render as render_deployment_history
     render_deployment_history()
 else:

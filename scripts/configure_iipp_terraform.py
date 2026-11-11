@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 PROJECT = "Innominds-IIPP"
@@ -26,7 +27,25 @@ def allow(sid, actions, resources, conditions=None):
     return result
 
 
-def execution_policy(account, region, environment, key_arn, instance_role=None):
+def merge_policy(existing, additions):
+    """Add required statements without removing unrelated existing permissions."""
+    merged = json.loads(json.dumps(existing))
+    statements = merged.setdefault("Statement", [])
+    for statement in additions["Statement"]:
+        content = {k: v for k, v in statement.items() if k != "Sid"}
+        if any({k: v for k, v in old.items() if k != "Sid"} == content for old in statements):
+            continue
+        new = dict(statement)
+        while new.get("Sid") in {old.get("Sid") for old in statements}:
+            new["Sid"] += "Supplement"
+        statements.append(new)
+    return merged
+
+
+def execution_policy(account, region, environment, key_arn, instance_role=None, instance_families="t3"):
+    families = [value.strip() for value in instance_families.split(",") if value.strip()]
+    if not families or any(value != "*" and not re.fullmatch(r"[a-z][a-z0-9-]*", value) for value in families):
+        raise ValueError("Supply comma-separated AWS instance families or * for all families")
     ec2 = f"arn:aws:ec2:{region}:{account}:"
     eks = f"arn:aws:eks:{region}:{account}:"
     regional = {"StringEquals": {"aws:RequestedRegion": region}}
@@ -66,6 +85,11 @@ def execution_policy(account, region, environment, key_arn, instance_role=None):
         # EKS CreateCluster does not support GrantIsForAWSResource (EKS KMS guide).
         allow("EKSKeyGrants", "kms:CreateGrant", key_arn),
     ]
+    launch = next(statement for statement in statements if statement["Sid"] == "LaunchInstances")
+    if "*" in families:
+        launch["Condition"].pop("StringLike")
+    else:
+        launch["Condition"]["StringLike"]["ec2:InstanceType"] = [family + ".*" for family in families] if len(families) > 1 else families[0] + ".*"
     if instance_role:
         statements += [allow("PassInstanceRole", "iam:PassRole", instance_role,
                              {"StringEquals": {"iam:PassedToService": "ec2.amazonaws.com"}}),
@@ -96,6 +120,19 @@ def role_snapshot(iam, role):
 
 def service_trust(service):
     return document([{"Effect": "Allow", "Principal": {"Service": service}, "Action": "sts:AssumeRole"}])
+
+
+def compatible_service_trust(trust, service):
+    """Accept existing service-only trust while preserving stricter conditions."""
+    statements = trust.get("Statement", [])
+    if isinstance(statements, dict):
+        statements = [statements]
+    if len(statements) != 1:
+        return False
+    statement = statements[0]
+    actions = statement.get("Action")
+    return (statement.get("Effect") == "Allow" and statement.get("Principal") == {"Service": service}
+            and actions in ("sts:AssumeRole", ["sts:AssumeRole"]))
 
 
 def verify_identity(session, account):
@@ -161,7 +198,7 @@ def check_access(source, targets, region):
     print("Read-only prerequisites checked; key policy, routing, SCPs and effective write permissions still require verification.")
 
 
-def configure_target(session, account, region, environment, key_arn, backup_dir=None, instance_role=None):
+def configure_target(session, account, region, environment, key_arn, backup_dir=None, instance_role=None, instance_families="t3"):
     verify_identity(session, account)
     iam = session.client("iam")
     # Fail before writes if connections have not been bootstrapped. Never replace their trust.
@@ -186,7 +223,7 @@ def configure_target(session, account, region, environment, key_arn, backup_dir=
         trust = service_trust(service)
         try:
             existing = iam.get_role(RoleName=role)["Role"]["AssumeRolePolicyDocument"]
-            if existing.get("Statement") != trust["Statement"]:
+            if not compatible_service_trust(existing, service):
                 raise ValueError(f"Existing {role} trust differs; review it before setup")
         except iam.exceptions.NoSuchEntityException:
             iam.create_role(RoleName=role, AssumeRolePolicyDocument=json.dumps(trust))
@@ -200,10 +237,14 @@ def configure_target(session, account, region, environment, key_arn, backup_dir=
         except iam.exceptions.NoSuchEntityException:
             iam.create_service_linked_role(AWSServiceName=service)
     from configure_iipp_test_accounts import inventory_policy
+    try:
+        previous_inventory = iam.get_role_policy(RoleName="IIPPInventoryReadRole", PolicyName="IIPPPlanInputReads")["PolicyDocument"]
+    except iam.exceptions.NoSuchEntityException:
+        previous_inventory = document([])
     iam.put_role_policy(RoleName="IIPPInventoryReadRole", PolicyName="IIPPPlanInputReads",
-                        PolicyDocument=json.dumps(inventory_policy()))
+                        PolicyDocument=json.dumps(merge_policy(previous_inventory, inventory_policy(account))))
     iam.put_role_policy(RoleName="IIPPTerraformExecutionRole", PolicyName="Innominds-IIPP-Permissions",
-                        PolicyDocument=json.dumps(execution_policy(account, region, environment, key_arn, instance_role)))
+                        PolicyDocument=json.dumps(execution_policy(account, region, environment, key_arn, instance_role, instance_families)))
 
 
 def main():
@@ -213,6 +254,7 @@ def main():
     parser.add_argument("--test-key-arn")
     parser.add_argument("--poc-instance-role-arn")
     parser.add_argument("--test-instance-role-arn")
+    parser.add_argument("--allowed-instance-families", default="t3", help="Comma-separated families; * allows all families while retaining account/region/tag controls")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--management-profile")
     parser.add_argument("--poc-profile")
@@ -242,7 +284,7 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for environment, account, key in targets:
         path = args.output_dir / f"{environment}-execution-policy.json"
-        path.write_text(json.dumps(execution_policy(account, args.region, environment, key, instance_roles[environment]), indent=2) + "\n")
+        path.write_text(json.dumps(execution_policy(account, args.region, environment, key, instance_roles[environment], args.allowed_instance_families), indent=2) + "\n")
     from configure_iipp_test_accounts import inventory_policy
     artifacts = {"inventory-policy.json": inventory_policy(),
                  "eks-cluster-trust.json": service_trust("eks.amazonaws.com"),
@@ -261,7 +303,7 @@ def main():
     for (environment, account, key), target in zip(targets, sessions):
         from datetime import datetime, timezone
         backup = args.output_dir / (account + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"))
-        configure_target(target, account, args.region, environment, key, backup, instance_roles[environment])
+        configure_target(target, account, args.region, environment, key, backup, instance_roles[environment], args.allowed_instance_families)
         print(f"Configured {environment} IAM; networking and key policy require independent verification.")
 
 

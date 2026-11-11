@@ -40,6 +40,25 @@ def test_launch_conditions_do_not_block_referenced_resources():
     assert all("s3:" not in str(x["Action"]) for x in policy["Statement"])
 
 
+def test_inventory_supplement_preserves_existing_statements_and_is_idempotent():
+    existing = setup.document([setup.allow("Read", "ec2:DescribeInstances", "*")])
+    additions = setup.document([setup.allow("Read", "iam:GetRole", "target-role")])
+    merged = setup.merge_policy(existing, additions)
+    assert merged["Statement"][0] == existing["Statement"][0]
+    assert merged["Statement"][1]["Sid"] == "ReadSupplement"
+    assert setup.merge_policy(merged, additions) == merged
+    assert len(existing["Statement"]) == 1
+
+
+def test_existing_conditional_service_trust_is_preserved_and_extra_principals_rejected():
+    trust = setup.service_trust("eks.amazonaws.com")
+    trust["Statement"][0]["Condition"] = {"StringEquals": {"aws:SourceAccount": "333347372766"}}
+    assert setup.compatible_service_trust(trust, "eks.amazonaws.com")
+    assert trust["Statement"][0]["Condition"]
+    trust["Statement"][0]["Principal"]["AWS"] = "*"
+    assert not setup.compatible_service_trust(trust, "eks.amazonaws.com")
+
+
 def test_eks_role_passing_and_grants_are_scoped():
     policy = setup.execution_policy("695729002971", "ap-south-1", "test", "specific-key")
     statements = {x["Sid"]: x for x in policy["Statement"]}
@@ -51,6 +70,28 @@ def test_eks_role_passing_and_grants_are_scoped():
     assert "Condition" not in statements["EKSKeyGrants"]
     assert statements["CreateCluster"]["Resource"] == "*"
     assert statements["CreateCluster"]["Condition"]["StringEquals"]["aws:RequestTag/Environment"] == "test"
+
+
+@pytest.mark.parametrize("families", ["*", "t3,t3a,c4"])
+def test_expanded_families_keep_account_region_tags_and_passrole_controls(families):
+    policy = setup.execution_policy("333347372766", "ap-south-1", "poc", "verified-key", instance_families=families)
+    statements = {s["Sid"]: s for s in policy["Statement"]}
+    launch = statements["LaunchInstances"]
+    assert launch["Resource"] == "arn:aws:ec2:ap-south-1:333347372766:instance/*"
+    assert launch["Condition"]["StringEquals"]["aws:RequestedRegion"] == "ap-south-1"
+    assert launch["Condition"]["StringEquals"]["aws:RequestTag/Environment"] == "poc"
+    if families == "*":
+        assert "StringLike" not in launch["Condition"]
+    else:
+        assert launch["Condition"]["StringLike"]["ec2:InstanceType"] == ["t3.*", "t3a.*", "c4.*"]
+    assert statements["PassClusterRole"]["Resource"] == "arn:aws:iam::333347372766:role/IIPPEKSClusterRole"
+    assert statements["EKSKeyGrants"]["Resource"] == "verified-key"
+
+
+@pytest.mark.parametrize("families", ["", "t3.*", "t3,invalid family"])
+def test_invalid_family_setting_fails_closed(families):
+    with pytest.raises(ValueError, match="instance families"):
+        setup.execution_policy("333347372766", "ap-south-1", "poc", "key", instance_families=families)
 
 
 def test_offline_generation_requires_matching_key_accounts(tmp_path):

@@ -5,7 +5,7 @@ APP_PATH = ROOT / "app.py"
 
 
 def test_agent_is_event_driven_and_dashboard_does_not_generate_load():
-    source = APP_PATH.read_text()
+    source = APP_PATH.read_text(encoding="utf-8")
     assert "Agent idle — waiting for a sustained CPU threshold event" in source
     assert "No infrastructure plan or approval action is shown by default" in source
     assert "Run controlled load test" not in source
@@ -16,8 +16,8 @@ def test_agent_is_event_driven_and_dashboard_does_not_generate_load():
 
 
 def test_cost_estimation_has_price_list_and_cost_explorer_permissions():
-    source = (ROOT / "aws_data.py").read_text()
-    policy = (ROOT / "iam-cost-policy.json").read_text()
+    source = (ROOT / "aws_data.py").read_text(encoding="utf-8")
+    policy = (ROOT / "iam-cost-policy.json").read_text(encoding="utf-8")
     assert '"pricing:GetProducts"' in policy
     assert '"ce:GetCostAndUsage"' in policy
     assert "get_running_ec2_cost_estimate" in source
@@ -26,7 +26,7 @@ def test_cost_estimation_has_price_list_and_cost_explorer_permissions():
 
 
 def test_legacy_direct_ec2_resize_is_disabled_for_terraform_only_architecture():
-    source = (ROOT / "provisioning.py").read_text()
+    source = (ROOT / "provisioning.py").read_text(encoding="utf-8")
     assert "Direct EC2 API resize is disabled in IIPP" in source
     assert "modify_instance_attribute" not in source
     assert "stop_instances" not in source
@@ -34,7 +34,7 @@ def test_legacy_direct_ec2_resize_is_disabled_for_terraform_only_architecture():
 
 
 def test_trend_watcher_is_cpu_only_and_has_sustained_scale_up_and_down_logic():
-    source = (ROOT / "trend.py").read_text()
+    source = (ROOT / "trend.py").read_text(encoding="utf-8")
     assert "high_streak >= HIGH_STREAK_REQUIRED" in source
     assert "low_streak >= LOW_STREAK_REQUIRED" in source
     assert "HIGH_CPU_PERCENT = 70.0" in source
@@ -120,9 +120,9 @@ def test_new_spike_can_retrigger_after_prior_signal_clears(tmp_path):
 
 
 def test_agent_has_read_only_candidate_discovery_tool_and_never_claims_spare_capacity():
-    agent_source = (ROOT / "agent.py").read_text()
-    aws_source = (ROOT / "aws_data.py").read_text()
-    policy = (ROOT / "iam-policy-example.json").read_text()
+    agent_source = (ROOT / "agent.py").read_text(encoding="utf-8")
+    aws_source = (ROOT / "aws_data.py").read_text(encoding="utf-8")
+    policy = (ROOT / "iam-policy-example.json").read_text(encoding="utf-8")
     assert '"name": "discover_instance_type_options"' in agent_source
     assert "describe_instance_type_offerings" in aws_source
     assert "does not guarantee spare On-Demand capacity" in aws_source
@@ -131,22 +131,25 @@ def test_agent_has_read_only_candidate_discovery_tool_and_never_claims_spare_cap
 
 
 def test_global_header_has_provider_account_configure_and_no_right_logo():
-    app = (ROOT / "app.py").read_text()
+    app = (ROOT / "app.py").read_text(encoding="utf-8")
     assert (ROOT / "assets" / "innominds-logo.jpg").exists()
-    assert 'st.image(str(LOGO_PATH), width=180)' in app  # shared header brand
+    assert '    brand()' in app
+    assert 'class="header-brand"' in (ROOT / 'shell_ui.py').read_text(encoding='utf-8')
     assert 'st.image(str(DASHBOARD_IMAGE_PATH), width=210)' not in app
-    assert 'st.selectbox("Cloud provider", ["AWS", "Azure", "GCP"]' in app
-    assert 'selector_label = {"AWS": "AWS account", "Azure": "Azure subscription", "GCP": "GCP project"}' in app
-    assert 'key="iipp-global-configure"' in app
-    assert 'st.session_state.pop("iipp_open_provider_config_dialog", False)' in app
-    assert 'st.session_state.pop("iipp_open_connection_success_dialog", False)' in app
-    assert 'st.session_state["iipp_open_provider_config_dialog"] = True' in app
-    assert '@st.dialog("Configure cloud provider", width="large")' in app
+    assert 'key="cloud-provider-widget"' in app
+    assert '"Account / Subscription / Project", account_options' in app
+    assert "key='control-configure'" in app
+    assert "st.session_state.pop('iipp_open_provider_config_dialog', False)" in app
+    assert "st.session_state.pop('iipp_open_connection_success_dialog', False)" in app
+    assert "st.session_state['iipp_open_provider_config_dialog'] = True" in app
+    assert '@st.dialog("Control Center", width="large")' in app
     assert '@st.dialog("Cloud connection verified", width="small")' in app
-    assert 'st.radio("Workspace", ["Agent", "Telemetry", "Deployment"]' in app
+    assert "pages = ['Dashboard', 'Provisioning Agent', 'Deployment']" in app
+    assert "pages.append('Approvals & schedules')" in app
+    assert "st.radio('Workspace', pages" in app
     assert 'placeholder="Describe your infrastructure requirements…"' in app
-    assert "AWS_PROFILES" not in (ROOT / "cloud_comparison.py").read_text()
-    assert "PROFILE_TYPES" not in (ROOT / "cloud_adapters" / "aws.py").read_text()
+    assert "AWS_PROFILES" not in (ROOT / "cloud_comparison.py").read_text(encoding="utf-8")
+    assert "PROFILE_TYPES" not in (ROOT / "cloud_adapters" / "aws.py").read_text(encoding="utf-8")
     assert "instance_type_options = [" not in app
     assert "Use selected configuration" in app
     assert "Scale-down datapoints" in app
@@ -163,8 +166,8 @@ def test_destroy_workflow_lives_in_deployments():
 
 
 def test_agent_response_is_concise_and_active_cloud_context_is_shared():
-    app = (ROOT / "app.py").read_text()
-    agent = (ROOT / "agent.py").read_text()
+    app = (ROOT / "app.py").read_text(encoding="utf-8")
+    agent = (ROOT / "agent.py").read_text(encoding="utf-8")
     assert "_active_cloud_selection" in app
     assert "aws_connection_id = active_aws_id or None" in app
     assert "6–8 short, readable lines" in agent
@@ -173,8 +176,8 @@ def test_agent_response_is_concise_and_active_cloud_context_is_shared():
 
 
 def test_llm_recommendation_can_prefill_a_terraform_plan_but_never_applies_directly():
-    agent_source = (ROOT / "agent.py").read_text()
-    app_source = (ROOT / "app.py").read_text()
+    agent_source = (ROOT / "agent.py").read_text(encoding="utf-8")
+    app_source = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "recommended_instance_type" in agent_source
     assert "Preferred instance type" in agent_source
     assert "initial_type = suggested_instance_type or" in app_source
@@ -278,7 +281,7 @@ def test_post_resize_cooldown_blocks_immediate_reverse_recommendation(tmp_path):
 
 
 def test_approval_clears_stale_plan_and_execution_receipt_ui():
-    app = (ROOT / "app.py").read_text()
+    app = (ROOT / "app.py").read_text(encoding="utf-8")
     assert "start_post_change_cooldown(TREND_STATE_PATH" in app
     assert "TREND_EVENT_PATH.unlink(missing_ok=True)" in app
     assert "LATEST_PLAN_PATH.unlink(missing_ok=True)" in app
@@ -302,7 +305,7 @@ def test_product_branding_and_agent_use_single_provisioning_prompt():
 
 
 def test_live_connected_account_inventory_panel_is_removed_from_work_and_agent():
-    app = APP_PATH.read_text()
+    app = APP_PATH.read_text(encoding="utf-8")
     work_block = app.split("def render_telemetry() -> None:", 1)[1].split("def _fallback_plan", 1)[0]
     agent_block = app.split("def render_agent() -> None:", 1)[1].split("PRICE_CACHE_TTL_SECONDS", 1)[0]
     assert "render_configured_provider_inventory()" not in work_block
@@ -310,10 +313,10 @@ def test_live_connected_account_inventory_panel_is_removed_from_work_and_agent()
 
 
 def test_configure_dialog_uses_one_shot_events_and_has_close_button():
-    app = APP_PATH.read_text()
-    provider_ui = (APP_PATH.parent / "provider_ui.py").read_text()
-    assert 'st.session_state.pop("iipp_open_provider_config_dialog", False)' in app
-    assert 'st.session_state.pop("iipp_open_connection_success_dialog", False)' in app
+    app = APP_PATH.read_text(encoding="utf-8")
+    provider_ui = (APP_PATH.parent / "provider_ui.py").read_text(encoding="utf-8")
+    assert "st.session_state.pop('iipp_open_provider_config_dialog', False)" in app
+    assert "st.session_state.pop('iipp_open_connection_success_dialog', False)" in app
     assert 'st.button("Close", key="iipp-config-close"' in provider_ui
     assert 'st.session_state["iipp_open_connection_success_dialog"] = True' in provider_ui
 
@@ -335,7 +338,7 @@ def test_agent_answer_sanitizer_handles_unclosed_thinking_tag():
 
 
 def test_recommendation_card_highlights_exact_or_nearest_safe_aws_option():
-    app = APP_PATH.read_text()
+    app = APP_PATH.read_text(encoding="utf-8")
     assert "RECOMMENDED AWS CONFIGURATION" in app
     assert "CLOSEST AWS CONFIGURATION · NOT ELIGIBLE FOR PROVISIONING" in app
     assert "Exact match check and closest configurations" in app

@@ -115,6 +115,10 @@ def _shortlist(spec_rows: list[dict[str, Any]], required_vcpus: int,
         allowed, _reason = _usable_for_cloudpilot_linux(spec)
         if not allowed:
             continue
+        # Accelerated profiles are not offered by the standard VM/worker UI;
+        # exclude them before reserving the two hardware-upgrade tiers.
+        if any(spec.get(key) for key in ("GpuInfo", "FpgaInfo", "InferenceAcceleratorInfo", "NeuronInfo")):
+            continue
         cpu = int(spec["VCpuInfo"]["DefaultVCpus"])
         memory = round(float(spec["MemoryInfo"]["SizeInMiB"]) / 1024.0, 3)
         row = dict(spec)

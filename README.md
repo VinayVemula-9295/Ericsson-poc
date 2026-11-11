@@ -1,5 +1,35 @@
 # Intelligent Provisioning Platform (v19)
 
+Connected Clouds now uses compact cards with a single gross MTD usage metric:
+[dashboard cleanup and controller access](docs/connected-clouds-cleanup.md).
+Credits and net expenditure remain available internally and in account billing.
+Earlier billing definitions:
+[billing definitions, POC illustrations and live evidence](docs/gross-infrastructure-usage.md).
+
+Current organization, billing, read-role setup and live verification limits:
+[Organization billing and account inventory](docs/organization-billing-inventory.md).
+This guide supersedes the earlier dashboard layout and configured-account subtotal descriptions.
+SSO refresh and actual AWS/runtime/browser results are recorded in the
+[2026-11-11 live validation report](docs/aws-live-validation-2026-11-11.md).
+
+The customer POC adds authenticated admin access, a fixed branded header,
+AWS/Azure/GCP provider cards, organization details on hover or focus, organization
+MTD billing and connected-account subtotals. Account details expand below the cards;
+deployment history retains reviewed operations, and successful-source reuse shows
+saved CPU/RAM sizing. See [setup, permissions and limits](docs/customer-poc-access.md)
+and the [implementation record](docs/customer-poc-implementation.md). These guides
+supersede older demo-login and dashboard descriptions below. No IAM policies are
+attached and no application deployment is performed by these source changes.
+
+The homepage now provides unified AWS, Azure, and GCP hierarchy exploration,
+target inventory and provider billing. See [dashboard configuration and access
+boundaries](docs/multicloud-dashboard.md). Configure opens the connection form
+directly; Deployment uses bottom-right pagination.
+
+Optional customer-scoped approvals and scheduling are documented in
+[Control-plane workflow](docs/control-plane-workflow.md), including identity setup,
+worker operation, plan expiry and remaining integrations.
+
 Demo provisioning now supports editing saved-plan inputs, explicit worker counts,
 shared comparison tiers and resource success details. See
 [behavior and live verification limits](docs/demo-provisioning-verification.md).

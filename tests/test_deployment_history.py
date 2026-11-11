@@ -56,6 +56,20 @@ def test_missing_history_is_read_only(tmp_path):
     assert not root.exists()
 
 
+def test_saved_sizing_prefers_selected_specs_and_labels_legacy_requirements(tmp_path):
+    save(tmp_path, 'poc_plans', 'sized', dict(deployment_id='sized', status='SUCCEEDED',
+        candidate=dict(vcpus=2, memory_gib=1), requirements=dict(min_vcpus=1, min_memory_gib=.5)))
+    save(tmp_path, 'terraform_deployments', 'legacy-sized', dict(deployment_id='legacy-sized', status='SUCCEEDED',
+        requested_configuration=dict(min_vcpus=4, min_memory_gib=8)))
+    save(tmp_path, 'poc_plans', 'missing', dict(deployment_id='missing', status='SUCCEEDED'))
+    rows, unreadable = load_history(tmp_path)
+    assert not unreadable
+    details = {row['deployment_id']: row['configuration_details'] for row in rows}
+    assert details['sized'] == '2 vCPU · 1 GiB RAM'
+    assert details['legacy-sized'] == '4 vCPU required · 8 GiB RAM required'
+    assert details['missing'] == 'vCPU unavailable · GiB RAM unavailable'
+
+
 def test_history_page_refresh_and_details_read_persisted_records(monkeypatch, tmp_path):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     source = "from deployment_history_ui import render\nrender()"
@@ -69,12 +83,16 @@ def test_history_page_refresh_and_details_read_persisted_records(monkeypatch, tm
                           {"status": "SUCCEEDED", "timestamp": "2026-11-05T00:01:00Z"}],
     })
     before = (directory / "record.json").read_bytes()
-    page.button(key="refresh-deployment-history").click().run()
+    assert not any(button.key == 'refresh-deployment-history' for button in page.button)
+    assert page.button(key='history-previous').disabled
+    assert page.button(key='history-next').disabled
+    page.run()
     assert not page.exception
-    assert any(item.value == "saved-server" for item in page.text)
-    page.button(key="deployment-details-poc_plans:poc-ui").click().run(timeout=15)
+    assert any(item.value == "saved-server" for item in page.markdown)
+    page.button(key="history-details-poc_plans:poc-ui").click().run(timeout=15)
     assert not page.exception
-    assert len(page.dataframe) == 1
+    assert len(page.dataframe) == 1  # Detail dialog timeline.
+    assert not any(item.value == 'Deployment workflow' for item in page.subheader)
     assert (directory / "record.json").read_bytes() == before
 
 
@@ -86,12 +104,10 @@ def test_success_table_filters_statuses_and_has_unique_details(monkeypatch, tmp_
         })
     page = AppTest.from_string("from deployment_history_ui import render\nrender()").run()
     assert not page.exception
-    assert [item.value for item in page.subheader] == ["Successfully deployed", "History"]
-    texts = [item.value for item in page.text]
-    assert texts.count("SUCCEEDED") == 2
-    for status in ("FAILED", "APPLYING", "DESTROYED"):
-        assert texts.count(status) == 1
+    assert sum(b.label == 'Details' for b in page.button) == 3
+    assert sum(b.label == 'Reprovision' for b in page.button) == 1
     keys = [button.key for button in page.button]
     assert len(keys) == len(set(keys))
-    page.button(key="successful-deployment-details-poc_plans:SUCCEEDED").click().run()
+    page.selectbox(key='history-status').select_index(0).run()
+    next(b for b in page.button if b.label == "Details").click().run()
     assert not page.exception

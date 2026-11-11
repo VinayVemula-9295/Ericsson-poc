@@ -6,6 +6,18 @@ from types import SimpleNamespace
 from streamlit.testing.v1 import AppTest
 
 
+def test_successful_row_exposes_destroy_without_executing(monkeypatch):
+    import deployment_history_ui as ui
+    row = dict(key="test-success", provider="AWS", raw_status="SUCCEEDED", name="server", target="Demo",
+               region="ap-south-1", status="Successfully deployed", created_at="2026-11-06")
+    monkeypatch.setattr(ui, "load_history", lambda: ([row], 0))
+    page = AppTest.from_string("from deployment_history_ui import render\nrender()", default_timeout=15).run()
+    assert not page.exception
+    destroy = [b for b in page.button if b.label == "Destroy"]
+    assert len(destroy) == 1
+    assert destroy[0].key == "successful-destroy-test-success"
+
+
 def test_destroy_dialog_requires_submit_then_validation(monkeypatch):
     import deployment_history_ui as ui
     did = "poc-" + "a" * 32

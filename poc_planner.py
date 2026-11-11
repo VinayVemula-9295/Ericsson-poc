@@ -138,7 +138,11 @@ def _runtime(candidate, request, inputs, conn, tf):
             raise ValueError("Unsupported provider")
     return env
 
-def prepare(candidate: dict, request: dict, inputs: dict, latency: list[dict] = ()) -> dict:
+def prepare(candidate: dict, request: dict, inputs: dict, latency: list[dict] = (), *, reuse_from=None) -> dict:
+    from control_plane import authorize_connection
+    actor = authorize_connection(candidate.get('connection_id'))
+    if actor:
+        request = dict(request, initiated_by=actor['username'])
     # Lazy import: execution requires Linux flock; configuration generation is portable.
     import terraform_service as tf
     enabled, message = tf.is_enabled()
@@ -153,7 +157,18 @@ def prepare(candidate: dict, request: dict, inputs: dict, latency: list[dict] = 
     conn = get_connection(connection_id)
     if not conn or conn.get("connection_status") != "CONNECTED" or conn.get("provider") != candidate["provider"]:
         raise ValueError("A verified connection matching the target provider is required")
-    config = configuration(candidate, request["kind"])
+    bundle = None
+    if reuse_from:
+        from reuse_artifacts import load
+        bundle = load(*reuse_from)
+        if reuse_from[0] != 'poc_plans':
+            raise ValueError('Saved source uses another Terraform workflow')
+        original = bundle[1].get('candidate', {})
+        if any(candidate.get(k) != original.get(k) for k in ('provider', 'sku', 'os', 'cluster')):
+            raise ValueError('Reuse preserves the saved infrastructure configuration')
+        config = json.loads((bundle[0] / 'main.tf.json').read_text(encoding='utf-8'))
+    else:
+        config = configuration(candidate, request["kind"])
     names = set(config["variable"])
     if {"admin_password", "external_id"}.intersection(inputs):
         raise ValueError("Sensitive values must come from protected runtime secrets, not JSON inputs")
@@ -179,9 +194,10 @@ def prepare(candidate: dict, request: dict, inputs: dict, latency: list[dict] = 
         from poc_image_validation import verify
         image_evidence = verify(candidate, conn, inputs["image_id"])
     if provider == "AWS":
-        config["provider"]["aws"]["default_tags"] = [{"tags": {
-            "ManagedBy": "Innominds-IIPP-Terraform", "Environment": request.get("environment", "poc"),
-            "TTL_Days": str(request.get("ttl_days", 2)), "Owner": "Innominds-IIPP", "Project": "Innominds-IIPP"}}]
+        if not bundle:
+            config["provider"]["aws"]["default_tags"] = [{"tags": {
+                "ManagedBy": "Innominds-IIPP-Terraform", "Environment": request.get("environment", "poc"),
+                "TTL_Days": str(request.get("ttl_days", 2)), "Owner": "Innominds-IIPP", "Project": "Innominds-IIPP"}}]
         if request["kind"] == "VM":
             safe = tf._validate_payload(dict(region=candidate["region"], instance_type=candidate["sku"],
                 os=candidate["os"], ami_id=inputs["image_id"], subnet_id=inputs["subnet_id"],
@@ -195,12 +211,17 @@ def prepare(candidate: dict, request: dict, inputs: dict, latency: list[dict] = 
     env["TF_DATA_DIR"] = str(directory / ".terraform")
     values = {k: v for k, v in inputs.items() if k not in {"external_id", "admin_password"}}
     content = json.dumps(config, indent=2)
+    if bundle:
+        from reuse_artifacts import copy_sources
+        copy_sources(bundle[0], directory)
     (directory / "main.tf.json").write_text(content, encoding="utf-8")
     (directory / "terraform.tfvars.json").write_text(json.dumps(values), encoding="utf-8")
     for path in directory.iterdir():
         path.chmod(0o600)
     record = {"record_version": 1, "deployment_id": deployment_id, "status": "PREPARING",
         "created_at": datetime.now(timezone.utc).isoformat(), "connection_id": connection_id,
+        "initiated_by": request.get("initiated_by"), "source_deployment": request.get("source_deployment"),
+        "subscription_id": conn.get("subscription_id"), "project_id": conn.get("project_id"),
         "resource_name": values.get("name", deployment_id),
         "target_identity": conn.get("account_id") or meta.get("subscription_id") or meta.get("project_id"),
         "candidate": candidate, "requirements": request, "module_version": "poc-v1",
@@ -209,10 +230,12 @@ def prepare(candidate: dict, request: dict, inputs: dict, latency: list[dict] = 
         "state_key": "iipp/poc/" + deployment_id + "/terraform.tfstate",
         "inputs_sha256": tf._sha256(directory / "terraform.tfvars.json"),
         "execution_enabled": False, "image_evidence": image_evidence, "live_input_evidence": live_evidence}
+    if bundle:
+        record.update(source_deployment=reuse_from[1], source_artifact_sha256=bundle[2])
     _write(directory, record)
     try:
         event("PLAN_STARTED", deployment_id=deployment_id, provider=provider, region=candidate["region"], sku=candidate["sku"])
-        backend = _backend(record)
+        backend = _backend(record, readonly=bool(bundle))
         for args in (backend, ["terraform", "validate", "-no-color"], ["terraform", "plan", "-input=false", "-no-color", "-out=tfplan"]):
             code, _ = (tf._run_init if args[1] == "init" else tf._run)(args, directory, 300, extra_env=env)
             if code:
@@ -228,6 +251,8 @@ def prepare(candidate: dict, request: dict, inputs: dict, latency: list[dict] = 
                       completed_at=datetime.now(timezone.utc).isoformat())
         raise
     finally:
+        from reuse_artifacts import snapshot
+        snapshot(directory, record)
         _write(directory, record)
         event("PLAN_FINISHED", deployment_id=deployment_id, status=record["status"])
     return record
@@ -235,6 +260,8 @@ def prepare(candidate: dict, request: dict, inputs: dict, latency: list[dict] = 
 
 def apply_saved_plan(deployment_id: str, reviewer: str, token: str) -> dict:
     """Authorize, lock, verify, then apply the same binary plan exactly once."""
+    from control_plane import guard_apply
+    guard_apply('poc_plans', deployment_id)
     import hmac
     import re
     import terraform_service as tf
@@ -445,6 +472,15 @@ def prepare_destroy_plan(deployment_id):
 
 
 def apply_destroy_plan(deployment_id, reviewer, token):
+    from control_plane import enabled, authorize_connection
+    if enabled():
+        import re
+        if not re.fullmatch(r'poc-[0-9a-f]{32}', deployment_id):
+            raise ValueError('Invalid deployment ID')
+        directory = Path(os.getenv('DATA_DIR', '/data')) / 'poc_plans' / deployment_id
+        metadata = json.loads((directory / 'record.json').read_text(encoding='utf-8'))
+        actor = authorize_connection(metadata.get('connection_id'), ('administrator', 'approver'))
+        reviewer = actor['username']
     from approval import validate
     from placement import timestamp
     validate(reviewer, token)

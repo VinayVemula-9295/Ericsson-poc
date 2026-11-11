@@ -1,0 +1,79 @@
+"""Shared branded header and authenticated workspace entry."""
+from pathlib import Path
+import base64
+import time
+import streamlit as st
+
+PRODUCT = 'Intelligent Provisioning Platform'
+
+
+def brand():
+    logo = Path(__file__).parent / 'assets' / 'innominds-logo.png'
+    encoded = base64.b64encode(logo.read_bytes()).decode()
+    st.markdown(f'<div class="header-brand"><img alt="Innominds" src="data:image/png;base64,{encoded}"><span>{PRODUCT}</span></div>', unsafe_allow_html=True)
+
+
+def require_demo_login():
+    """Compatibility entry point; demo bypass has been removed."""
+    import app_auth
+    from control_plane import enabled, principal
+    if app_auth.session_valid(st.session_state):
+        if enabled() or app_auth.uses_registry():
+            try:
+                principal()
+            except (ValueError, OSError, KeyError):
+                sign_out()
+            else:
+                return
+        else:
+            return
+    if st.session_state.get('iipp-auth') or st.session_state.get('demo-profile'):
+        sign_out()
+    st.markdown('<style>[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"]{display:none}</style>', unsafe_allow_html=True)
+    with st.container(border=True, key='admin-login'):
+        brand()
+        st.caption('CLOUD OPERATIONS WORKSPACE')
+        st.subheader('Welcome back')
+        st.write('Sign in to manage your cloud estate and review infrastructure changes.')
+        if not app_auth.configured():
+            st.info('Administrator access has not been configured. Run tools/setup_admin.py and load the generated environment file before starting the platform.')
+        with st.form('admin-login-form', clear_on_submit=True):
+            username = st.text_input('Username', autocomplete='username')
+            password = st.text_input('Password', type='password', autocomplete='current-password')
+            submitted = st.form_submit_button('Sign in', type='primary', use_container_width=True)
+        if submitted:
+            try:
+                user = app_auth.authenticate(username.strip(), password)
+            except (KeyError, OSError, ValueError, TypeError):
+                user = None
+            if user:
+                sign_out()
+                stamp = time.time()
+                st.session_state['iipp-auth'] = dict(user, created=stamp, last_seen=stamp)
+                st.session_state['control-plane-user'] = user['username']
+                st.session_state['demo-profile'] = dict(name=user['username'], initials=user['username'][:2].upper(), role=user['role'])
+                st.rerun()
+            st.error('Unable to sign in. Check your credentials or try again in five minutes.')
+        st.caption('Authorized access only. Sessions expire automatically after inactivity.')
+    st.stop()
+
+
+def sign_out():
+    for key in list(st.session_state):
+        del st.session_state[key]
+
+
+def sidebar_profile():
+    profile = st.session_state['demo-profile']
+    profile = dict(profile, initials='A') if profile.get('role', '').lower() in {'admin', 'administrator'} else profile
+    from html import escape
+    st.markdown(f'<div class="sidebar-profile"><span class="profile-avatar">{escape(profile["initials"])}</span><div><strong>{escape(profile["name"])}</strong><small>{escape(profile["role"])}</small></div></div>', unsafe_allow_html=True)
+
+
+def header_profile():
+    profile = st.session_state['demo-profile']
+    profile = dict(profile, initials='A') if profile.get('role', '').lower() in {'admin', 'administrator'} else profile
+    with st.popover(profile['initials'], help='Open profile'):
+        st.write(profile['name'])
+        st.caption(profile['role'])
+        st.button('Sign out', on_click=sign_out, use_container_width=True)

@@ -76,3 +76,5 @@ crash.*.log
 .DS_Store
 Thumbs.db
 Desktop.ini
+.local-data/
+

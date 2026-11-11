@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import secrets
 import sys
 from pathlib import Path
@@ -33,8 +34,8 @@ def source_role_from_identity() -> str:
     return arn
 
 
-def inventory_policy() -> dict[str, Any]:
-    return {"Version": "2012-10-17", "Statement": [{
+def inventory_policy(account: str | None = None) -> dict[str, Any]:
+    policy = {"Version": "2012-10-17", "Statement": [{
         "Sid": "IIPPReadInventoryTelemetryQuotasAndCosts", "Effect": "Allow",
         "Action": [
             "sts:GetCallerIdentity",
@@ -48,6 +49,12 @@ def inventory_policy() -> dict[str, Any]:
             "ce:GetCostAndUsage", "ce:GetCostForecast", "ce:GetDimensionValues"
         ], "Resource": "*"
     }]}
+    if account is not None:
+        if not re.fullmatch(r"\d{12}", account):
+            raise ValueError("Inventory account must be a 12-digit AWS account ID")
+        policy["Statement"].append({"Sid": "ValidateAccountPlanRoles", "Effect": "Allow",
+                                    "Action": "iam:GetRole", "Resource": f"arn:aws:iam::{account}:role/*"})
+    return policy
 
 
 def execution_policy(region: str, environment: str) -> dict[str, Any]:

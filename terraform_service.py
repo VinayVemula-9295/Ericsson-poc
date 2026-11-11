@@ -350,7 +350,11 @@ def _validate_aws_references(payload: dict[str, Any]) -> None:
         raise RuntimeError(f"Could not validate AMI/subnet/security group/instance type using live EC2 APIs: {type(exc).__name__}: {exc}. Check the IIPP controller IAM role's read permissions.") from exc
 
 
-def prepare_plan(payload: dict[str, Any]) -> dict[str, Any]:
+def prepare_plan(payload: dict[str, Any], *, reuse_from=None) -> dict[str, Any]:
+    from control_plane import authorize_connection
+    actor = authorize_connection(payload.get('aws_connection_id'))
+    if actor:
+        payload = dict(payload, initiated_by=actor['username'])
     enabled, message = is_enabled()
     if not enabled: raise RuntimeError(message)
     safe = _validate_payload(payload)
@@ -362,7 +366,17 @@ def prepare_plan(payload: dict[str, Any]) -> dict[str, Any]:
     deployment_id = "cp-" + uuid.uuid4().hex[:16]
     directory = _base_dir() / deployment_id
     directory.mkdir(mode=0o700)
-    for source in STACK_TEMPLATE.iterdir():
+    bundle = None
+    if reuse_from:
+        from reuse_artifacts import load, copy_sources
+        bundle = load(*reuse_from)
+        if reuse_from[0] != 'terraform_deployments':
+            raise ValueError('Saved source uses another Terraform workflow')
+        original = bundle[1].get('requested_configuration', {})
+        if safe['instance_type'] != original.get('instance_type') or safe['os'] != original.get('os', 'Linux'):
+            raise ValueError('Reuse preserves the saved infrastructure configuration')
+        copy_sources(bundle[0], directory)
+    for source in (() if bundle else STACK_TEMPLATE.iterdir()):
         if source.is_file() and source.suffix in {".tf", ".md"}:
             shutil.copyfile(source, directory / source.name)
     tfvars = {key: safe[key] for key in ("os", "region", "ami_id", "instance_type", "subnet_id", "security_group_id", "instance_name", "owner", "ttl_days", "instance_profile_name", "environment")}
@@ -373,6 +387,7 @@ def prepare_plan(payload: dict[str, Any]) -> dict[str, Any]:
         "deployment_id": deployment_id, "status": "DRAFT", "created_at": created_at,
         "updated_at": created_at, "state_history": [{"status": "DRAFT", "timestamp": created_at}],
         "provider": "AWS", "region": safe["region"],
+        "initiated_by": payload.get("initiated_by"),
         "aws_connection_id": safe.get("aws_connection_id"),
         "requested_configuration": {k: v for k, v in safe.items() if k not in {"instance_profile_name"}},
         "execution_mode": "Terraform S3 remote-state saved-plan approval workflow",
@@ -386,6 +401,8 @@ def prepare_plan(payload: dict[str, Any]) -> dict[str, Any]:
                      "Terraform state is stored in the configured S3 bucket with native S3 locking. Provider binaries use the shared plugin cache.",
                      "AWS discovery/validation uses the selected connection's inventory role; Terraform resource operations use its execution role."],
     }
+    if bundle:
+        record.update(source_deployment=reuse_from[1], source_artifact_sha256=bundle[2])
     _write_record(directory, record)
     try:
         _transition(record, "VALIDATED")
@@ -395,7 +412,7 @@ def prepare_plan(payload: dict[str, Any]) -> dict[str, Any]:
         record["target_execution_role_arn"] = runtime.get("target_role_arn")
         _write_record(directory, record)
         runtime_env = _terraform_runtime_env(safe.get("aws_connection_id"))
-        code, output = _run_init(_backend_init_args(deployment_id), directory, 240, extra_env=runtime_env)
+        code, output = _run_init(_backend_init_args(deployment_id) + (['-lockfile=readonly'] if bundle else []), directory, 240, extra_env=runtime_env)
         if code:
             _transition(record, "FAILED", error="terraform init failed", log=output)
             _cleanup_terraform_working_cache(directory, record, "init failed before a saved plan existed")
@@ -417,6 +434,8 @@ def prepare_plan(payload: dict[str, Any]) -> dict[str, Any]:
         plan_file.chmod(0o600)
         _restrict_sensitive_files(directory)
         show_code, summary = _run(["terraform", "show", "-no-color", "tfplan"], directory, 120, extra_env=runtime_env)
+        from reuse_artifacts import snapshot
+        snapshot(directory, record)
         _transition(record, "AWAITING_APPROVAL", plan_sha256=_sha256(plan_file),
                     plan_file="tfplan", plan_summary=summary if show_code == 0 else "Saved plan created; human-readable summary unavailable.",
                     plan_created_at=_now(), plan_changes="NOT APPLIED")
@@ -437,6 +456,8 @@ def prepare_plan(payload: dict[str, Any]) -> dict[str, Any]:
 @_serialized_deployment_operation
 def apply_saved_plan(deployment_id: str, reviewer: str) -> dict[str, Any]:
     """Apply only the exact, checksummed, unexpired plan after reviewer approval."""
+    from control_plane import guard_apply
+    guard_apply('terraform_deployments', deployment_id)
     enabled, message = is_enabled()
     if not enabled: raise RuntimeError(message)
     directory = _base_dir() / deployment_id
@@ -460,6 +481,12 @@ def apply_saved_plan(deployment_id: str, reviewer: str) -> dict[str, Any]:
         raise ValueError("Saved Terraform plan is older than four hours. Generate and review a fresh plan before applying.")
     if record.get("plan_file", "tfplan") != "tfplan":
         raise ValueError("Unexpected saved-plan path. Generate and review a new plan.")
+    if record.get('reuse_manifest'):
+        from reuse_artifacts import digest
+        for name, checksum in record['reuse_manifest']['files'].items():
+            path = directory / name
+            if Path(name).name != name or path.is_symlink() or not path.is_file() or digest(path) != checksum:
+                raise ValueError('Saved Terraform source changed. Generate a new plan.')
     plan_file = directory / "tfplan"
     if not plan_file.is_file() or _sha256(plan_file) != record.get("plan_sha256"):
         raise ValueError("Saved plan is missing or its checksum changed. Generate and review a new plan.")
@@ -571,6 +598,13 @@ def prepare_destroy_plan(deployment_id: str) -> dict[str, Any]:
 
 @_serialized_deployment_operation
 def apply_destroy_plan(deployment_id: str, reviewer: str, token: str = "") -> dict[str, Any]:
+    from control_plane import enabled, authorize_connection
+    if enabled():
+        if not re.fullmatch(r'cp-[0-9a-f]{16}', deployment_id):
+            raise ValueError('Invalid deployment ID')
+        metadata = _read_record(_base_dir() / deployment_id)
+        actor = authorize_connection(metadata.get('aws_connection_id'), ('administrator', 'approver'))
+        reviewer = actor['username']
     """Apply the exact reviewed destroy plan for a IIPP-managed deployment only."""
     from approval import validate
     validate(reviewer, token)

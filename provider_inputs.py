@@ -6,6 +6,7 @@ stay in local SDK clients; failed discovery never substitutes sample resources.
 from __future__ import annotations
 
 import json
+import re
 import urllib.request
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -15,6 +16,19 @@ from provider_connections import get_connection, get_saved_secret, get_aws_sessi
 
 def choice(value, label=None, **metadata):
     return dict(value=value, label=label or value, **metadata)
+
+
+def _trusts(role, service):
+    statements = role.get("AssumeRolePolicyDocument", {}).get("Statement", [])
+    for statement in ([statements] if isinstance(statements, dict) else statements):
+        principal = statement.get("Principal", {})
+        services = principal.get("Service", []) if isinstance(principal, dict) else []
+        actions = statement.get("Action", [])
+        services = [services] if isinstance(services, str) else services
+        actions = [actions] if isinstance(actions, str) else actions
+        if statement.get("Effect") == "Allow" and service in services and any(a in {"sts:AssumeRole", "sts:*", "*"} for a in actions):
+            return True
+    return False
 
 
 def _json(url, token, host):
@@ -97,36 +111,33 @@ def discover(connection_id, region, kind, os_name="Linux"):
             fields["second_subnet_id"] = fields.get("subnet_id", [])
             if "subnet_id" in errors:
                 errors["second_subnet_id"] = errors["subnet_id"]
-            def roles():
-                rows = _aws_pages(session.client("iam"), "list_roles", "Roles")
-                def trusting(role, service):
-                    policy = role.get("AssumeRolePolicyDocument", {})
-                    for statement in policy.get("Statement", []):
-                        principal = statement.get("Principal", {})
-                        services = principal.get("Service", []) if isinstance(principal, dict) else []
-                        services = [services] if isinstance(services, str) else services
-                        if statement.get("Effect") == "Allow" and service in services:
-                            return True
-                    return False
-                return {field: [choice(r["Arn"], r["RoleName"]) for r in rows if trusting(r, service)]
-                        for field, service in (("cluster_role_arn", "eks.amazonaws.com"), ("node_role_arn", "ec2.amazonaws.com"))}
-            load(["cluster_role_arn", "node_role_arn"], roles)
             eks = session.client("eks", region_name=region)
             load("kubernetes_version", lambda: [choice(v["clusterVersion"]) for v in _aws_pages(
                 eks, "describe_cluster_versions", "clusterVersions", includeAll=False)
                 if v.get("versionStatus", "STANDARD_SUPPORT") != "UNSUPPORTED"])
+            account = conn.get("account_id") or conn.get("metadata", {}).get("account_id")
+            iam = session.client("iam")
+            def roles():
+                if not account:
+                    raise ValueError("Verified account ID required")
+                rows = [role for page in iam.get_paginator("list_roles").paginate()
+                        for role in page.get("Roles", [])
+                        if role.get("Arn", "").startswith(f"arn:aws:iam::{account}:role/")]
+                return {field: [choice(r["Arn"]) for r in rows if _trusts(r, service)]
+                        for field, service in (("cluster_role_arn", "eks.amazonaws.com"), ("node_role_arn", "ec2.amazonaws.com"))}
+            load(["cluster_role_arn", "node_role_arn"], roles)
+            kms = session.client("kms", region_name=region)
             def keys():
-                kms = session.client("kms", region_name=region)
+                if not account:
+                    raise ValueError("Verified account ID required")
                 values = []
-                for key in _aws_pages(kms, "list_keys", "Keys"):
-                    try:
-                        info = kms.describe_key(KeyId=key["KeyId"])["KeyMetadata"]
-                    except Exception:
-                        errors["kms_key_arn"] = "Some keys could not be inspected. Required read: kms:DescribeKey; check the key policy."
-                        continue
-                    if (info.get("KeyState") == "Enabled" and info.get("KeyUsage") == "ENCRYPT_DECRYPT"
-                            and info.get("KeyManager") == "CUSTOMER" and info.get("KeySpec") == "SYMMETRIC_DEFAULT"):
-                        values.append(choice(info["Arn"]))
+                for page in kms.get_paginator("list_keys").paginate():
+                    for item in page.get("Keys", []):
+                        key = kms.describe_key(KeyId=item["KeyId"])["KeyMetadata"]
+                        if (key.get("Arn", "").startswith(f"arn:aws:kms:{region}:{account}:key/")
+                            and key.get("KeyState") == "Enabled" and key.get("KeyManager") == "CUSTOMER"
+                            and key.get("KeyUsage") == "ENCRYPT_DECRYPT" and key.get("KeySpec") == "SYMMETRIC_DEFAULT"):
+                            values.append(choice(key["Arn"]))
                 return values
             load("kms_key_arn", keys)
     elif conn["provider"] == "Azure":
@@ -225,6 +236,45 @@ def compatible_choices(name, evidence, inputs):
     return rows
 
 
+def validate_manual_arns(session, region, inputs, account_id=None):
+    """Validate exact user-supplied resources without listing account roles or keys."""
+    iam = session.client("iam")
+    matched_account = account_id
+    for field, service in (("cluster_role_arn", "eks.amazonaws.com"), ("node_role_arn", "ec2.amazonaws.com")):
+        arn = inputs.get(field, "")
+        match = re.fullmatch(r"arn:aws:iam::(\d{12}):role/([A-Za-z0-9+=,.@_/-]+)", arn)
+        if not match or (matched_account and match[1] != matched_account):
+            raise ValueError(field.replace("_", " ") + " must be a role ARN in the selected account")
+        matched_account = matched_account or match[1]
+        try:
+            role = iam.get_role(RoleName=match[2].rsplit("/", 1)[-1])["Role"]
+        except Exception:
+            raise ValueError("Cannot verify " + field.replace("_", " ") + ". Check the ARN and iam:GetRole permission.") from None
+        statements = role.get("AssumeRolePolicyDocument", {}).get("Statement", [])
+        statements = [statements] if isinstance(statements, dict) else statements
+        trusted = False
+        for statement in statements:
+            principal = statement.get("Principal", {})
+            services = principal.get("Service", []) if isinstance(principal, dict) else []
+            services = [services] if isinstance(services, str) else services
+            actions = statement.get("Action", [])
+            actions = [actions] if isinstance(actions, str) else actions
+            if statement.get("Effect") == "Allow" and service in services and any(a in {"sts:AssumeRole", "sts:*", "*"} for a in actions):
+                trusted = True
+        if role.get("Arn") != arn or not trusted:
+            raise ValueError(field.replace("_", " ") + " must trust " + service + " for sts:AssumeRole")
+    key_arn = inputs.get("kms_key_arn", "")
+    if not re.fullmatch(r"arn:aws:kms:" + re.escape(region) + ":" + matched_account + r":key/[a-fA-F0-9-]+", key_arn):
+        raise ValueError("KMS key ARN must belong to the selected account and region")
+    try:
+        key = session.client("kms", region_name=region).describe_key(KeyId=key_arn)["KeyMetadata"]
+    except Exception:
+        raise ValueError("Cannot verify KMS key ARN. Check kms:DescribeKey permission and the key policy.") from None
+    if (key.get("Arn") != key_arn or key.get("KeyState") != "Enabled" or key.get("KeyManager") != "CUSTOMER"
+            or key.get("KeyUsage") != "ENCRYPT_DECRYPT" or key.get("KeySpec") != "SYMMETRIC_DEFAULT"):
+        raise ValueError("KMS key must be an enabled customer-managed symmetric encryption key")
+
+
 def validate_live_inputs(candidate, request, inputs):
     """Fresh read at planning time, including live hardware in the chosen account."""
     cid, region = candidate["connection_id"], candidate["region"]
@@ -255,7 +305,11 @@ def validate_live_inputs(candidate, request, inputs):
     evidence = discover(cid, region, request["kind"], candidate["os"])
     required = {"subnet_id", "image_id"} if request["kind"] == "VM" else {"subnet_id", "kubernetes_version"}
     if candidate["provider"] == "AWS":
-        required |= {"security_group_id"} if request["kind"] == "VM" else {"second_subnet_id", "cluster_role_arn", "node_role_arn", "kms_key_arn"}
+        required |= {"security_group_id"} if request["kind"] == "VM" else {"second_subnet_id"}
+        if request["kind"] == "Kubernetes":
+            session = get_aws_session(cid, purpose="inventory")
+            account_id = conn.get("account_id") or session.client("sts").get_caller_identity()["Account"]
+            validate_manual_arns(session, region, inputs, account_id)
     elif candidate["provider"] == "Azure":
         required.add("resource_group")
         if request["kind"] == "VM":
@@ -267,5 +321,5 @@ def validate_live_inputs(candidate, request, inputs):
     for name in required:
         values = {r["value"] for r in compatible_choices(name, evidence, inputs)}
         if inputs.get(name) not in values:
-            raise ValueError("Live account validation failed for " + name.replace("_", " ") + "; refresh live values and choose an available value")
+            raise ValueError("Live account validation failed for " + name.replace("_", " ") + "; check the selected account and input value")
     return {"connection_id": cid, "region": region, "retrieved_at": evidence["retrieved_at"], "status": "verified"}

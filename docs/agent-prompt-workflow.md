@@ -1,9 +1,9 @@
 # Agent prompt and Terraform workflow
 
 The [Demo provisioning update](demo-provisioning-verification.md) supersedes the
-older tier-unavailable and pod-only sizing descriptions below. Explicit worker
-counts are preserved; tiers share an eligible configuration when an upgrade is
-absent. Plan dialogs include Edit, and successful apply shows safe resource details.
+older pod-only sizing descriptions below. Explicit worker counts are preserved;
+Recommended and Optimal require distinct successive hardware upgrades. Plan dialogs
+group Edit and Apply at bottom right, and successful apply shows safe resource details.
 
 Agent now opens directly on **Describe workload and constraints** with the
 **Ask Intelligent Provisioning agent** prompt. The earlier POC toggle, intro,
@@ -31,7 +31,10 @@ configuration download have been removed from the page.
    storage charges are excluded; version compatibility is not established by
    a price comparison.
 3. Use configuration opens a provider-specific tested-account dropdown and
-   labelled inputs. Selecting a catalogue choice no longer requires resending
+   labelled inputs for every eligible card, including AWS families outside runner
+   policy. Restricted configurations remain editable with a policy warning;
+   Generate Terraform plan is disabled and any displayed saved plan is cleared.
+   Backend policy checks still run before plan and apply. Selecting a catalogue choice no longer requires resending
    the prompt to attach an account. Live choices load from that account and region;
    **Refresh live values** discards any displayed plan and reloads them.
    AWS servers ask for VM name, AMI ID, subnet ID and security group ID. The execution role
@@ -58,8 +61,8 @@ The Work page retains automatic refresh, with a manual **Refresh** beside
 **Platform controller account**. The refresh clears the telemetry and price
 caches. The duplicated active-context caption, target inventory panel and
 requested explanatory captions are removed. Applied Agent resources appear in
-the lifecycle table. Existing AWS deployment destroy handoffs are preserved;
-the new multi-cloud records do not introduce a destroy action.
+the lifecycle table. Successful AWS deployment rows offer Destroy beneath Details,
+using the existing saved destroy-plan review and explicit approval workflow.
 
 ## Runtime requirements and verification limits
 

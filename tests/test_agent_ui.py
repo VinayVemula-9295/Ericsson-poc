@@ -5,7 +5,7 @@ from streamlit.testing.v1 import AppTest
 
 
 @pytest.fixture
-def agent_page(monkeypatch, tmp_path):
+def agent_page(monkeypatch, tmp_path, region_catalogues):
     import provider_connections
     import agent_flow_ui
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
@@ -13,6 +13,9 @@ def agent_page(monkeypatch, tmp_path):
     monkeypatch.setattr(provider_connections, "list_connections", lambda: [])
     monkeypatch.setattr(agent_flow_ui, "list_connections", lambda: [])
     page = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
+    page.session_state['demo-profile'] = dict(name='Jordan Davis', initials='JD', role='Platform administrator')
+    import time
+    page.session_state['iipp-auth'] = dict(username='test-admin', created=time.time(), last_seen=time.time())
     page.session_state["navigation"] = "Agent"
     # Users with an old browser session must receive the new UI too.
     page.session_state["extended-poc"] = False
@@ -24,7 +27,7 @@ def test_existing_sessions_receive_new_prompt_without_toggle(agent_page):
     assert len(agent_page.text_area) == 1
     assert agent_page.text_area[0].placeholder == "Ask Intelligent Provisioning agent"
     assert not agent_page.toggle
-    assert any(b.label == "Send" for b in agent_page.button)
+    assert any(b.label == "Evaluate" for b in agent_page.button)
     assert not any("Kubernetes execution" in b.label for b in agent_page.button)
 
 
@@ -36,11 +39,19 @@ def test_workspace_removes_intro_and_entire_evidence_sidebar(agent_page):
     assert "Describe workload and constraints" in content
 
 
+def test_telemetry_is_empty_and_four_workspaces_are_available(agent_page):
+    assert agent_page.radio(key='navigation').options == ['Dashboard', 'Provisioning Agent', 'Deployment']
+    agent_page.radio(key='navigation').set_value('Dashboard').run(timeout=20)
+    assert not agent_page.exception
+    assert not agent_page.text_area
+    assert any(b.label == 'Configure Cloud' for b in agent_page.button)
+
+
 def test_empty_submission_and_initial_render_do_not_query_clouds(agent_page, monkeypatch):
     import agent_flow_ui
     monkeypatch.setattr(agent_flow_ui, "collect", lambda *a: pytest.fail("Unexpected cloud lookup"))
     agent_page.text_area(key="poc-prompt").input("   ")
-    next(b for b in agent_page.button if b.label == "Send").click().run(timeout=20)
+    next(b for b in agent_page.button if b.label == "Evaluate").click().run(timeout=20)
     assert not agent_page.exception
     assert any("requirements first" in item.value for item in agent_page.error)
 
