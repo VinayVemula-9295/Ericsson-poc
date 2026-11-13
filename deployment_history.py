@@ -21,6 +21,11 @@ STATUS_LABELS = {
 }
 
 
+def mask_account_identifier(value):
+    text = str(value or 'Unavailable')
+    return re.sub(r'(?<!\d)(\d{2})\d{7}(\d{3})(?!\d)', r'\1xxxxxxx\2', text)
+
+
 def load_destroy_review(source, deployment_id):
     """Load only the display fields needed to resume a saved destroy review."""
     patterns = {"poc_plans": (r"poc-[0-9a-f]{32}", "record.json"),

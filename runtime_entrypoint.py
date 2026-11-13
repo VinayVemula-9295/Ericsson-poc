@@ -37,8 +37,11 @@ def supervise(commands):
 
 
 def main():
-    commands = [[sys.executable, '-m', 'streamlit', 'run', 'app.py',
-                 '--server.address=0.0.0.0', '--server.port=8501', '--server.headless=true']]
+    os.environ.setdefault('IIPP_STREAMLIT_URL', 'http://127.0.0.1:8502')
+    os.environ['IIPP_BROWSER_SESSIONS_ENABLED'] = 'true'
+    commands = [[sys.executable, 'session_gateway.py'],
+                [sys.executable, '-m', 'streamlit', 'run', 'app.py',
+                 '--server.address=127.0.0.1', '--server.port=8502', '--server.headless=true']]
     from control_plane import enabled, users
     if enabled():
         registry = users()

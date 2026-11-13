@@ -25,7 +25,7 @@ def _destroy(row):
         try:
             with st.spinner("Preparing destroy plan…"):
                 record = (load_destroy_review(row["source"], row["deployment_id"])
-                          if row["raw_status"] == "DESTROY_AWAITING_APPROVAL" and not st.session_state.get(state_key + "-regenerate")
+                          if row["raw_status"] == "DESTROY_AWAITING_APPROVAL"
                           else service.prepare_destroy_plan(row["deployment_id"]))
             if record["status"] != "DESTROY_AWAITING_APPROVAL":
                 raise ValueError("Destroy planning failed. Review protected runner diagnostics.")
@@ -34,41 +34,63 @@ def _destroy(row):
             st.error(str(exc) if isinstance(exc, ValueError) else "Destroy planning failed. Review protected runner diagnostics.")
             return
     st.code(record.get("destroy_plan_summary", "Summary unavailable"))
-    if st.button("Regenerate plan", key=state_key + "-new"):
-        st.session_state.pop(state_key, None)
-        st.session_state.pop(state_key + "-submitted", None)
-        st.session_state[state_key + "-regenerate"] = True
-        st.session_state["open-destroy"] = row
-        st.rerun()
     if not st.session_state.get(state_key + "-submitted"):
-        if st.button("Submit", key=state_key + "-submit"):
-            st.session_state[state_key + "-submitted"] = True
-            st.session_state["open-destroy"] = row
-            st.rerun()
-        return
+        _, submit_column = st.columns([5, 1.5])
+        if not submit_column.button("Submit", key=state_key + "-submit", type="primary", use_container_width=True):
+            return
+        st.session_state[state_key + "-submitted"] = True
     reviewer = st.text_input("Reviewer name", key=state_key + "-reviewer")
     token = st.text_input("Approval token", type="password", key=state_key + "-token")
     ack = st.checkbox("I reviewed this exact plan and approve deletion.", key=state_key + "-ack")
-    if st.button("Validate and destroy", disabled=not (reviewer.strip() and token and ack), key=state_key + "-approve"):
+    _, action_column = st.columns([5, 1.5])
+    if action_column.button("Validate and destroy", disabled=not (reviewer.strip() and token and ack), key=state_key + "-approve", type="primary", use_container_width=True):
         try:
             with st.spinner("Applying reviewed destroy plan…"):
                 result = service.apply_destroy_plan(row["deployment_id"], reviewer, token)
-            st.session_state.pop(state_key, None)
-            st.session_state.pop(state_key + "-submitted", None)
-            st.session_state.pop(state_key + "-token", None)
-            if result["status"] == "DESTROYED":
-                st.success(f"Successfully destroyed {row['name']} · {row['deployment_id']}")
-                if result.get("resource_identifiers"):
-                    st.write(result["resource_identifiers"])
-                elif result.get("outputs"):
-                    st.write({k: v for k, v in result["outputs"].items() if k in {"instance_id", "instance_name"}})
-            else:
+            st.session_state.pop("open-destroy", None)
+            if result.get("status") != "DESTROYED":
                 st.error("Destroy failed. State and history are retained; refresh before retrying.")
+                return
+            for key in list(st.session_state):
+                if key.startswith(state_key):
+                    st.session_state.pop(key, None)
+            identifiers = result.get("resource_identifiers") or row.get("resource_identifiers") or []
+            resource_type = row.get("kind", "Unavailable")
+            if isinstance(identifiers, dict):
+                resource_type = identifiers.get("type") or resource_type
+                resource_id = identifiers.get("instance_id") or identifiers.get("id") or identifiers.get("value")
+                if not resource_id:
+                    resource_id = next(iter(identifiers.values()), "Unavailable")
+            elif isinstance(identifiers, list) and identifiers:
+                first = identifiers[0]
+                resource_type = first.get("type") or resource_type if isinstance(first, dict) else resource_type
+                resource_id = (first.get("id") or first.get("instance_id") or first.get("value")
+                               if isinstance(first, dict) else str(first))
+            else:
+                resource_id = None
+            outputs = result.get("outputs") or {}
+            if not resource_id and isinstance(outputs, dict):
+                resource_id = outputs.get("instance_id") or outputs.get("id")
+            st.session_state["destroy-success-details"] = {
+                "Type": resource_type,
+                "Name": row.get("name", "Unavailable"),
+                "ID": resource_id or "Unavailable",
+            }
+            st.rerun()
         except Exception as exc:
             st.error(str(exc) if isinstance(exc, ValueError) else "Destroy could not complete. Review protected runner diagnostics.")
-    if st.button("Close and refresh", key=state_key + "-close"):
-        st.rerun()
 
+
+def _close_destroy_success():
+    st.session_state.pop("destroy-success-details", None)
+    st.session_state.pop("open-destroy", None)
+
+
+@st.dialog("Resources destroyed successfully", width="small", on_dismiss=_close_destroy_success)
+def _destroy_success(details):
+    for label in ("Type", "Name", "ID"):
+        st.write(f"**{label}:** {details.get(label, 'Unavailable')}")
+    st.button("Close", key="close-destroy-success", type="primary", on_click=_close_destroy_success)
 
 @st.dialog("Deployment details", width="large")
 def _details(row):
@@ -109,6 +131,9 @@ def render():
     pending = st.session_state.pop("open-destroy", None)
     if pending:
         _destroy(pending)
+    details = st.session_state.get("destroy-success-details")
+    if details:
+        _destroy_success(details)
     st.subheader('Deployment history')
     rows, unreadable = load_history()
     if not rows:
@@ -200,8 +225,8 @@ def reuse_action(row, prefix='', label='Reuse'):
     if st.button(label, key=prefix + 'reuse-' + row['key'], disabled=bool(reason), help=reason):
         try:
             st.session_state['reuse-pending'] = (row['source'], row['deployment_id'])
-            if st.session_state.get('provisioning-mode') != 'Reuse previous deployment':
-                st.session_state['provisioning-mode'] = 'Reuse previous deployment'
+            if st.session_state.get('provisioning-mode') != 'Use Saved Configuration':
+                st.session_state['provisioning-mode'] = 'Use Saved Configuration'
             st.session_state['requested-page'] = 'Provisioning Agent'
             st.rerun()
         except (ValueError, OSError):

@@ -2,7 +2,7 @@
 import copy
 import json
 import streamlit as st
-from deployment_history import load_reusable_history, load_reuse
+from deployment_history import load_reusable_history, load_reuse, mask_account_identifier
 from deployment_history_ui import filter_records, reuse_action, ist
 from reuse_artifacts import load, availability
 
@@ -21,31 +21,53 @@ def configuration_details(row):
             except (ValueError, OSError):
                 st.error('Saved requirements unavailable; start a new request.')
     st.write({'Deployment ID': row['deployment_id'], 'Cloud': row['provider'],
-              'Account': row['target'], 'Region': row['region'],
+              'Account': mask_account_identifier(row['target']), 'Region': row['region'],
               'Configuration': row['configuration'], 'Status': row['status'],
               'Created': ist(row['created_at']), 'Completed': ist(row.get('completed_at'))})
     try:
         saved = load_reuse(row['source'], row['deployment_id'])
         st.write('Saved input values')
-        st.json(saved['inputs'])
+        def mask_values(value):
+            if isinstance(value, dict):
+                return {key: mask_values(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [mask_values(item) for item in value]
+            return mask_account_identifier(value) if isinstance(value, str) else value
+        st.json(mask_values(saved['inputs']))
     except (ValueError, OSError, KeyError, TypeError):
         st.info('Saved input values are unavailable.')
 
 
 def render():
+    if st.session_state.pop('reuse-reset-pending', False):
+        for key in ('reuse-source', 'reuse-draft', 'reuse-loaded', 'poc-selected', 'poc-result',
+                    'poc-saved-plan', 'poc-open-approval', 'poc-open-plan', 'poc-open-success',
+                    'iac-draft', 'terraform-code', 'iac-validation', 'draft-input-hash',
+                    'reuse-search', 'reuse-cloud', 'reuse-account', 'reuse-region', 'reuse-status',
+                    'reuse-start', 'reuse-end', 'reuse-initiator'):
+            st.session_state.pop(key, None)
+        for key in list(st.session_state):
+            if key.startswith(('tf-input-', 'terraform-editor-', 'terraform-code')):
+                st.session_state.pop(key, None)
+        for key in ('poc-prompt', 'poc-prompt-preset', 'poc-form-version', 'tf-live-inputs', 'tf-live-key'):
+            st.session_state.pop(key, None)
+        st.session_state['provisioning-mode'] = 'Use Saved Configuration'
     st.caption('Reuse saved Terraform to create a separate deployment. Review a fresh plan before applying.')
     rows, unreadable = load_reusable_history()
     rows = [r for r in rows if r['raw_status'] == 'SUCCEEDED']
     if unreadable:
         st.warning(f'{unreadable} saved records could not be read.')
     if not rows:
+        st.caption('0 successful deployments found')
         st.info('No verified successful deployments are available for reuse. Complete a deployment first.')
         return
     search = st.text_input('Search deployments', placeholder='Resource, deployment ID or account', key='reuse-search')
     with st.expander('Advanced search'):
         a, b, c = st.columns(3)
         provider = a.selectbox('Cloud provider', ['All', 'AWS', 'Azure', 'GCP'], key='reuse-cloud')
-        account = b.selectbox('Account', ['All'] + sorted({r['target'] for r in rows}), key='reuse-account')
+        account = b.selectbox('Account', ['All'] + sorted({r['target'] for r in rows}),
+                              format_func=lambda value: value if value == 'All' else mask_account_identifier(value),
+                              key='reuse-account')
         region = c.selectbox('Region', ['All'] + sorted({r['region'] for r in rows}), key='reuse-region')
         status = 'All'
         start = b.date_input('From date', value=None, key='reuse-start')
@@ -69,7 +91,7 @@ def render():
             return False
     filtered = [r for r in filter_records(rows, search, status, provider)
                 if (account == 'All' or account == r['target']) and (region == 'All' or region == r['region']) and in_range(r)]
-    st.caption(f'{len(filtered)} deployments found')
+    st.caption(f'{len(filtered)} successful deployments found')
     if not filtered:
         st.info('No deployments match your search.')
     else:
@@ -79,9 +101,8 @@ def render():
     for row in filtered:
         with st.container(border=True):
             cloud, resource, config, sizing, details, action = st.columns([2, 2, 2, 2, 1, 1])
-            cloud.write(row['provider'] + ' · ' + row['target'])
-            resource.write(row['name'])
-            resource.caption(row['kind'] + ' · ' + row['region'])
+            cloud.write(row['provider'] + ' · ' + mask_account_identifier(row['target']))
+            resource.write(f"{row['name']} {row['kind']}/{row['region']}")
             config.write(row['configuration'])
             sizing.write(row.get('configuration_details', 'Sizing unavailable'))
             if details.button('Details', key='reuse-details-' + row['key']):
@@ -160,6 +181,9 @@ def plan_controls(candidate, request, inputs, source):
     record = st.session_state.get('poc-saved-plan')
     if not record:
         return
+    if record.get('status') == 'SUCCEEDED':
+        st.session_state['reuse-reset-pending'] = True
+        st.rerun()
     st.caption(record['deployment_id'] + ' · ' + record['status'])
     if record['status'] == 'AWAITING_APPROVAL':
         if st.button('Review Terraform plan'):

@@ -25,6 +25,18 @@ def clear_result():
         st.session_state.pop(key, None)
 
 
+def clear_draft_state():
+    for key in ("poc-saved-plan", "poc-open-plan", "poc-open-approval", "poc-open-success",
+                "iac-draft", "iac-validation", "draft-input-hash", "terraform-code",
+                "poc-input-fingerprint"):
+        st.session_state.pop(key, None)
+    for key in list(st.session_state):
+        if key.startswith(('tf-', 'terraform-editor-')):
+            st.session_state.pop(key, None)
+    for key in ('tf-live-inputs', 'tf-live-key', 'provisioning-initiator'):
+        st.session_state.pop(key, None)
+
+
 def edit_plan():
     st.session_state.pop("iac-validation", None)
     st.session_state.pop("poc-saved-plan", None)
@@ -35,6 +47,12 @@ def edit_plan():
 
 def request_plan_approval():
     st.session_state["poc-open-approval"] = True
+
+
+def _choose_prompt():
+    prompt = st.session_state.get("poc-prompt-preset")
+    if prompt:
+        st.session_state["poc-prompt"] = prompt
 
 
 def explain(request, comparison):
@@ -156,14 +174,16 @@ def render():
     if pending:
         clear_result()
         st.session_state['reuse-source'] = pending
-        st.session_state['provisioning-mode'] = 'Reuse previous deployment'
+        st.session_state['provisioning-mode'] = 'Use Saved Configuration'
         st.session_state['poc-form-version'] = st.session_state.get('poc-form-version', 0) + 1
     from control_plane import enabled as governed
     if st.session_state.pop('cp-edit-requirements', False):
-        st.session_state['provisioning-mode'] = 'Create new infrastructure'
+        st.session_state['provisioning-mode'] = 'New Deployment'
         clear_result()
-    mode = st.radio('Start provisioning', ['Create new infrastructure', 'Reuse previous deployment'], horizontal=True, key='provisioning-mode')
-    if mode == 'Reuse previous deployment':
+    if st.session_state.get('provisioning-mode') not in {'New Deployment', 'Use Saved Configuration'}:
+        st.session_state['provisioning-mode'] = 'New Deployment'
+    mode = st.radio('Infrastructure Provisioning', ['New Deployment', 'Use Saved Configuration'], horizontal=True, key='provisioning-mode')
+    if mode == 'Use Saved Configuration':
         from reuse_ui import render as render_reuse
         render_reuse()
         return
@@ -177,18 +197,16 @@ def render():
     with ThreadPoolExecutor(max_workers=3) as executor:
         catalogues = dict(zip(("AWS", "Azure", "GCP"), executor.map(load_regions, ("AWS", "Azure", "GCP"))))
     st.markdown("## Describe workload and constraints")
-    if governed():
-        templates = {
-            'Linux server': 'Create a Linux VM with 4 vCPU and 16 GiB RAM.',
-            'Windows server': 'Create a Windows VM with 4 vCPU and 16 GiB RAM.',
-            'Linux Kubernetes workers': 'Create a Kubernetes cluster with 3 Linux workers, each with 4 vCPU and 16 GiB RAM.',
-        }
-        with st.expander('Start from a request template'):
-            template = st.selectbox('Template', list(templates))
-            if st.button('Use request template'):
-                st.session_state['poc-prompt'] = templates[template]
+    templates = [
+        'Create a Linux VM with 4 vCPU and 16 GiB RAM.',
+        'create a Windows VM with 4 vCPU and 16 GiB RAM.',
+        'Create a Kubernetes cluster with 2 Linux workers, each with 4 vCPU and 16 GiB RAM',
+    ]
+    st.selectbox('Infrastructure blueprint', [''] + templates, key='poc-prompt-preset',
+                 label_visibility='collapsed', on_change=_choose_prompt,
+                 format_func=lambda value: 'Choose a predefined prompt' if not value else value)
     with st.form("agent-prompt", border=False):
-        with st.expander("Advanced options"):
+        with st.expander("Customize Configuration"):
             regions, contexts = st.columns(3), []
             for column, (provider, default) in zip(regions, (("AWS", "ap-south-1"), ("Azure", "centralindia"), ("GCP", "asia-south1"))):
                 with column:
@@ -214,8 +232,8 @@ def render():
                     contexts.append((provider, region.strip(), zone, conn.get("connection_id")))
         with st.container(key="agent-composer"):
             prompt_column, send_column = st.columns([8, 1], vertical_alignment="center")
-            prompt_column.text_area("Ask Intelligent Provisioning agent", key="poc-prompt", height=90,
-                                   label_visibility="collapsed", placeholder="Ask Intelligent Provisioning agent")
+            prompt_column.text_area("Describe your infrastructure requirements", key="poc-prompt", height=90,
+                                   label_visibility="collapsed", placeholder="Describe your infrastructure requirements")
             with send_column:
                 submit = st.form_submit_button("Evaluate", icon=":material/arrow_upward:", type="primary")
     if submit:
@@ -287,20 +305,16 @@ def render():
                         st.caption("Configuration editable; planning and deployment restricted: " + restriction)
                     elif provider != "AWS":
                         st.caption("Public catalogue compute estimate")
-                    if st.button('Select Configuration', key=f"select-{provider}-{tier}", use_container_width=True):
-                        st.session_state['poc-choice'] = (provider, tier, dict(row))
-                    choice = st.session_state.get('poc-choice')
-                    chosen = choice and choice[0] == provider and choice[1] == tier
-                    if chosen:
-                        st.success('✓ Selected')
-                    if st.button("Use Configuration", key=f"use-{provider}-{tier}", use_container_width=True, disabled=not chosen):
+                    if st.button("Use Configuration", key=f"use-{provider}-{tier}", use_container_width=True):
+                        clear_draft_state()
                         st.session_state["poc-selected"] = dict(row)
-                        st.session_state.pop("poc-saved-plan", None)
-                        st.session_state.pop("poc-input-fingerprint", None)
                         st.session_state["poc-form-version"] = st.session_state.get("poc-form-version", 0) + 1
+                        st.session_state['poc-configuration-notice'] = True
                         event("CONFIGURATION_SELECTED", provider=provider, sku=row["sku"], region=row["region"])
     selected = st.session_state.get("poc-selected")
     if selected:
+        if st.session_state.pop('poc-configuration-notice', False):
+            st.info('Please fill in the required Terraform input fields to generate your infrastructure configuration')
         render_inputs(selected, request)
 
 
@@ -379,7 +393,6 @@ def render_inputs(selected, request, reuse_from=None):
     # Ordinary widgets rerun on edits, invalidating the displayed plan immediately.
     with st.container(border=True):
         columns = st.columns(2)
-        environment_anchor = "node_role_arn" if request["kind"] == "Kubernetes" else "subnet_id"
         # Network parents render before children so dependent lists update immediately.
         order = {name: i for i, name in enumerate(("name", "resource_group", "network_id", "subnet_id", "second_subnet_id", "security_group_id", "network_security_group_id", "pod_range_name", "service_range_name"))}
         for index, (name, spec) in enumerate(sorted(specs.items(), key=lambda pair: order.get(pair[0], 100))):
@@ -408,12 +421,6 @@ def render_inputs(selected, request, reuse_from=None):
                           key=widget_key + "-manual").strip()
                 if name in evidence.get("choices", {}) or name in evidence.get("errors", {}):
                     column.caption("No compatible live values returned. Planning requires live account validation.")
-            if name == environment_anchor:
-                request["environment"] = column.selectbox("Deployment environment", ["poc", "test"], index=1 if request.get('environment') == 'test' else 0, key=f"tf-environment-{version}-{cid}")
-                request["ttl_days"] = column.number_input("Resource TTL (days)", 1, 30, request.get("ttl_days", 2), key=f"tf-ttl-{version}-{cid}")
-        if environment_anchor not in specs:
-            request["environment"] = st.selectbox("Deployment environment", ["poc", "test"], index=1 if request.get('environment') == 'test' else 0, key=f"tf-environment-{version}-{cid}")
-            request["ttl_days"] = st.number_input("Resource TTL (days)", 1, 30, request.get("ttl_days", 2), key=f"tf-ttl-{version}-{cid}")
         if request["kind"] == "Kubernetes" and request.get("worker_count"):
             request["worker_count"] = st.number_input("Worker nodes", 1, 1000, request["worker_count"], key=f"tf-workers-{version}-{cid}", disabled=bool(reuse_from))
             node = dict(selected, monthly_compute_estimate=selected.get("node_monthly_compute_estimate"))
@@ -463,7 +470,6 @@ def render_inputs(selected, request, reuse_from=None):
     if code is None:
         code = st.session_state['terraform-code']
     st.session_state['terraform-code'] = code
-    st.caption('The source section is main.tf.json; inputs are terraform.tfvars.json. Runtime credentials are supplied separately by the existing runner.')
     code_hash = fingerprint((code, initiator))
     if st.session_state.get('iac-validation') != code_hash:
         st.session_state.pop('iac-validation', None)
@@ -473,7 +479,7 @@ def render_inputs(selected, request, reuse_from=None):
         try:
             validate(code, selected, request, inputs)
             st.session_state['iac-validation'] = code_hash
-            st.success('Supported values validated. Terraform CLI and live account validation run before planning.')
+            st.success('Terraform code has been validated successfully.')
         except ValueError as exc:
             st.session_state.pop('iac-validation', None)
             st.session_state.pop('poc-saved-plan', None)
@@ -532,9 +538,22 @@ def plan_dialog(record):
         st.rerun()
 
 
-@st.dialog("Resources created successfully", width="large")
+def _reset_new_deployment():
+    preserved = {key: st.session_state.get(key) for key in (
+        'iipp-auth', 'control-plane-user', 'demo-profile', 'iipp_active_provider',
+        'iipp_active_connection_id', 'iipp_provider_after_save', 'iipp_connection_after_save')}
+    for key in list(st.session_state):
+        if key.startswith(('poc-', 'iac-', 'tf-', 'reuse-', 'terraform-editor-')) or key in {
+            'terraform-code', 'tf-live-inputs', 'tf-live-key', 'draft-input-hash',
+            'poc-input-fingerprint', 'provisioning-initiator'}:
+            st.session_state.pop(key, None)
+    st.session_state.update({key: value for key, value in preserved.items() if value is not None})
+    st.session_state['provisioning-mode'] = 'New Deployment'
+
+
+@st.dialog("Resources created successfully", width="large", on_dismiss=_reset_new_deployment)
 def success_dialog(record):
-    st.success("The approved Terraform plan completed successfully.")
+    st.success("The Terraform Apply completed successfully.")
     details = dict(record.get("resource_details", {}))
     details.setdefault("resource_name", record.get("resource_name", "Unavailable"))
     details["region"] = record.get("candidate", {}).get("region", "Unavailable")
@@ -542,8 +561,7 @@ def success_dialog(record):
         st.write(f"**{key.replace('_', ' ').capitalize()}:** {value or 'Not assigned'}")
     if record.get("outputs_unavailable"):
         st.info("Resource details could not be retrieved. Deployment succeeded; inspect the saved deployment before retrying.")
-    if st.button("Close", key="close-resource-success"):
-        st.rerun()
+    st.button("Close", key="close-resource-success", on_click=_reset_new_deployment, type="primary")
 
 
 @st.dialog("Approve Terraform apply", width="large")
@@ -563,7 +581,7 @@ def approval_dialog(deployment_id, payload_hash):
     with st.form("terraform-approval", clear_on_submit=True):
         reviewer = st.text_input("Approver name", key="tf-approver")
         token = st.text_input("Approval token", type="password", key="tf-approval-token")
-        acknowledge = st.checkbox("I reviewed this exact Terraform plan and approve creating these resources.")
+        acknowledge = st.checkbox("I have reviewed and approve the Terraform changes.")
         apply = st.form_submit_button("Approve and apply", type="primary")
     if apply:
         try:
@@ -576,7 +594,7 @@ def approval_dialog(deployment_id, payload_hash):
                 apply_saved_plan = lambda did, who, approval_token: legacy_apply(did, who)
             else:
                 from poc_planner import apply_saved_plan
-            with st.spinner("Applying the approved saved Terraform plan…"):
+            with st.spinner("Applying the approved Terraform plan…"):
                 result = apply_saved_plan(deployment_id, reviewer, token)
             st.session_state["poc-saved-plan"] = result
             st.session_state.pop("poc-open-approval", None)

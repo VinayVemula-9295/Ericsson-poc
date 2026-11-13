@@ -5,22 +5,28 @@ older pod-only sizing descriptions below. Explicit worker counts are preserved;
 Recommended and Optimal require distinct successive hardware upgrades. Plan dialogs
 group Edit and Apply at bottom right, and successful apply shows safe resource details.
 
-Agent now opens directly on **Describe workload and constraints** with the
-**Ask Intelligent Provisioning agent** prompt. The earlier POC toggle, intro,
+Agent now opens on **Infrastructure Provisioning** with the unchanged
+**Describe workload and constraints** heading and the
+**Describe your infrastructure requirements** prompt. A searchable, unlabeled
+selector fills one of three editable Linux, Windows or Kubernetes sample prompts;
+choosing a prompt does not evaluate it. The earlier POC toggle, intro,
 evidence sidebar, raw comparison table, research button, explanation button and
 configuration download have been removed from the page.
 
 1. Describe a Linux/Windows server or use Kubernetes, K8s, EKS, AKS or GKE in the
-   prompt for managed Kubernetes with Linux workers. Send retrieves provider
+   prompt for managed Kubernetes with Linux workers. Evaluate retrieves provider
    evidence and displays an explanation automatically. Missing CPU/RAM values
-   are identified as inferred defaults. Advanced options contain only AWS,
+   are identified as inferred defaults. Customize Configuration contains AWS,
    Azure and GCP regions. Comparisons automatically use the active tested account
    for each provider, or its first tested account. Provider accounts are chosen
    again explicitly in Terraform inputs. Include residency region IDs in the
    prompt when required. Kubernetes pod requests and replicas can be described
    in the prompt and adjusted in Terraform inputs.
-2. AWS, Azure and GCP each show Selectable, Recommended and Optimal cards.
-   Selectable is an exact CPU/RAM match, or the nearest profile meeting both
+2. AWS, Azure and GCP each show ASK, Recommended and Optimal cards with a direct
+   **Use Configuration** action. Terraform inputs open with environment and TTL
+   kept at their internal defaults. Saved reuse lists mask account identifiers
+   and include only successful deployments.
+   ASK is an exact CPU/RAM match, or the nearest profile meeting both
    minimums. Recommended is the nearest eligible increase in CPU or RAM without
    reducing either; Optimal adds a further increase. Prices break hardware-distance
    ties. Missing upgrades remain unavailable instead of repeating a profile.

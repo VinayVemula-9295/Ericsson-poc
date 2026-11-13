@@ -29,10 +29,23 @@ def test_destroy_dialog_requires_submit_then_validation(monkeypatch):
     def apply(deployment_id, reviewer, supplied):
         assert reviewer == "Reviewer" and supplied == token
         calls.append("apply")
-        return dict(status="DESTROYED", resource_identifiers=[{"id": "i-example", "name": "server"}])
+        return dict(status="DESTROYED", resource_identifiers=[{"type": "aws_instance", "id": "i-example", "name": "server"}])
     monkeypatch.setattr(ui, "_service", lambda row: SimpleNamespace(prepare_destroy_plan=prepare, apply_destroy_plan=apply))
     row = dict(key="poc_plans:" + did, source="poc_plans", deployment_id=did, name="server", target="target", raw_status="SUCCEEDED")
-    page = AppTest.from_string("from deployment_history_ui import _destroy\n_destroy(" + repr(row) + ")", default_timeout=15).run()
+    page = AppTest.from_string('''
+import streamlit as st
+from deployment_history_ui import _destroy, _destroy_success
+pending = st.session_state.pop("open-destroy", None)
+row = ROW_PLACEHOLDER
+if pending or "destroy-review-" + row["key"] in st.session_state:
+    row = pending or row
+    _destroy(row)
+details = st.session_state.get("destroy-success-details")
+if details:
+    _destroy_success(details)
+'''.replace('ROW_PLACEHOLDER', repr(row)), default_timeout=15)
+    page.session_state['open-destroy'] = row
+    page = page.run()
     assert not page.exception
     assert calls == ["plan"] and not page.text_input
     page.button(key="destroy-review-" + row["key"] + "-submit").click().run()
@@ -43,7 +56,13 @@ def test_destroy_dialog_requires_submit_then_validation(monkeypatch):
     page.button(key="destroy-review-" + row["key"] + "-approve").click().run()
     assert not page.exception
     assert calls == ["plan", "apply"]
-    assert "Successfully destroyed server" in page.success[0].value
+    assert page.session_state['destroy-success-details']['Name'] == 'server'
+    assert page.session_state['destroy-success-details']['ID'] == 'i-example'
+    assert page.session_state['destroy-success-details']['Type'] == 'aws_instance'
+    assert any(button.label == 'Close' for button in page.button)
+    page.button(key='close-destroy-success').click().run()
+    assert 'destroy-success-details' not in page.session_state
+    assert calls == ['plan', 'apply']
 
 
 def test_resume_loads_only_saved_summary(monkeypatch, tmp_path):

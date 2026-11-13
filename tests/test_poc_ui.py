@@ -12,6 +12,7 @@ def page(monkeypatch, tmp_path, region_catalogues):
     import aws_data
     import provider_inputs
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv('IIPP_BROWSER_SESSIONS_ENABLED', 'false')
     monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
     # This UI fixture uses synthetic SKU names; explicitly allow those names.
     monkeypatch.setenv("IIPP_ALLOWED_AWS_INSTANCE_FAMILIES", "AWS-sku-1,AWS-sku-2,AWS-sku-4")
@@ -102,7 +103,7 @@ def test_aws_card_planning_follows_explicit_family_policy(page, monkeypatch, kin
 def test_prompt_is_clean_and_sends_directly_to_three_cloud_choices(page):
     ui, calls = page
     assert calls == []
-    assert ui.text_area(key="poc-prompt").placeholder == "Ask Intelligent Provisioning agent"
+    assert ui.text_area(key="poc-prompt").placeholder == "Describe your infrastructure requirements"
     assert not ui.toggle
     send(ui, "4 vCPU 16 GiB RAM Windows server")
     assert len(calls) == 3
@@ -110,9 +111,20 @@ def test_prompt_is_clean_and_sends_directly_to_three_cloud_choices(page):
     assert ui.session_state["poc-result"][0]["os"] == "Windows"
     assert [t.label for t in ui.tabs] == ["AWS", "Azure", "GCP"]
     assert len([b for b in ui.button if b.label == "Use Configuration"]) == 9
+    assert not any(b.label == "Select Configuration" for b in ui.button)
     assert any("**Recommendation:" in m.value for m in ui.markdown)
     assert not ui.dataframe
     assert not any(b.label in {"Explain verified evidence", "Research official documentation"} for b in ui.button)
+
+
+def test_prompt_preset_fills_editable_text_without_evaluating(page):
+    ui, calls = page
+    prompt = 'Create a Kubernetes cluster with 2 Linux workers, each with 4 vCPU and 16 GiB RAM'
+    ui.selectbox(key='poc-prompt-preset').select(prompt).run(timeout=20)
+    assert not ui.exception
+    assert ui.text_area(key='poc-prompt').value == prompt
+    assert calls == []
+    assert 'poc-result' not in ui.session_state
 
 
 def test_server_os_between_memory_and_server_keeps_requested_memory(page):
@@ -264,15 +276,19 @@ def test_requested_copy_and_controls_are_removed(page, prompt):
         assert removed not in copy
     use(ui, "use-AWS-ASK")
     assert not ui.exception
-    assert "Deployment environment" in [s.label for s in ui.selectbox]
-    assert "Resource TTL (days)" in [n.label for n in ui.number_input]
+    assert "Deployment environment" not in [s.label for s in ui.selectbox]
+    assert "Resource TTL (days)" not in [n.label for n in ui.number_input]
+    assert any('Please fill in the required Terraform input fields to generate your infrastructure configuration' in item.value for item in ui.info)
     assert "Refresh live values" not in [b.label for b in ui.button]
     assert "Required AWS roles and permissions" not in [e.label for e in ui.expander]
     assert "Advanced deployment settings" not in [e.label for e in ui.expander]
 
 
 def test_success_popup_shows_resource_details_once(page):
+    import secrets
     ui, _ = page
+    ui.session_state['iipp_active_provider'] = 'AWS'
+    ui.session_state['iipp_active_connection_id'] = 'AWS'
     send(ui, "2 vCPU 1 GiB RAM server")
     use(ui, "use-AWS-ASK")
     for field in ui.text_input:
@@ -282,12 +298,18 @@ def test_success_popup_shows_resource_details_once(page):
     ui.session_state["poc-saved-plan"] = dict(deployment_id="poc-" + "a" * 32, status="SUCCEEDED",
         resource_details=dict(resource_name="created-vm", instance_id="i-example", private_ip="10.0.1.1", public_ip=""))
     ui.session_state["poc-open-success"] = True
+    ui.session_state['tf-approval-token'] = secrets.token_urlsafe(24)
     ui.run(timeout=20)
     assert not ui.exception
     assert any("i-example" in m.value for m in ui.markdown)
     assert any("Not assigned" in m.value for m in ui.markdown)
     ui.button(key="close-resource-success").click().run(timeout=20)
     assert not any("i-example" in m.value for m in ui.markdown)
+    assert ui.text_area(key='poc-prompt').value == ''
+    assert 'poc-result' not in ui.session_state
+    assert ui.session_state['iipp_active_provider'] == 'AWS'
+    assert ui.session_state['iipp_active_connection_id'] == 'AWS'
+    assert 'tf-approval-token' not in ui.session_state
 
 
 def test_failed_discovery_replaces_old_choices_and_plan(page, monkeypatch):
@@ -479,9 +501,8 @@ def test_failed_refresh_discards_plan_and_previous_live_values(page, monkeypatch
 
 
 def use(ui, key):
-    if key.replace('use-', 'select-', 1) not in [b.key for b in ui.button]:
+    if key not in [b.key for b in ui.button]:
         key = key.replace('ASK', 'Recommended')
-    ui.button(key=key.replace('use-', 'select-', 1)).click().run(timeout=20)
     ui.button(key=key).click().run(timeout=20)
 
 
@@ -490,6 +511,7 @@ def draft(ui):
     next(b for b in ui.button if b.label == 'Generate Terraform IaC').click().run(timeout=20)
     assert not any(b.key == 'generate-terraform-plan' for b in ui.button)
     next(b for b in ui.button if b.label == 'Validate Configuration').click().run(timeout=20)
+    assert any(item.value == 'Terraform code has been validated successfully.' for item in ui.success)
 
 
 def test_highlighted_editor_edits_invalidate_saved_plan(page, monkeypatch):

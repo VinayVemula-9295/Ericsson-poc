@@ -3,6 +3,9 @@
 .billing-secondary strong{display:inline-block;font-size:17px;color:#1b304b;margin-bottom:8px}
 @media(min-width:1001px){[class*="st-key-summary-"]{min-height:390px!important}}
 :root{--platform-ink:#1b304b;--platform-purple:#7051c5;--platform-line:#e8ecf2}
+.iipp-footer{position:fixed;left:0;right:0;bottom:0;z-index:9999;box-sizing:border-box;width:100%;min-height:64px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;padding:14px 24px;background:#fff;border-top:1px solid #e5e5e5;box-shadow:0 -2px 9px #1b304b0a;color:#102b49;font-size:21px;line-height:1.35;text-align:center}
+.iipp-footer-brand{color:#0866a8;margin-inline:5px}
+[data-testid="stMainBlockContainer"]{padding-bottom:84px!important}
 html,body,[data-testid="stApp"]{font-family:"Segoe UI",Arial,sans-serif;font-size:16px;line-height:1.5}
 [data-testid="stMarkdownContainer"],input,textarea,button,[data-baseweb="select"]{font-family:"Segoe UI",Arial,sans-serif}
 .st-key-header-profile button{border-radius:50%;background:#eee9fb;color:var(--platform-purple);border:0;min-width:46px;min-height:46px}
@@ -62,6 +65,7 @@ button:focus-visible{outline:3px solid #b29ce8;outline-offset:3px}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 @media(max-width:640px){[data-testid="stMainBlockContainer"]{padding-inline:1rem}h1{font-size:1.8rem}.provider-logo{width:26px;height:26px}}
 @media(max-width:640px){[data-testid="stSidebar"][data-collapsed="true"]{visibility:hidden;pointer-events:none}}
+@media(max-width:640px){.iipp-footer{min-height:58px;font-size:15px;padding:12px 14px;line-height:1.35}}
 
 /* Shared shell, provider rows and deployment progress. */
 [data-testid="stMainBlockContainer"]{padding-top:1.5rem!important;container-type:inline-size}

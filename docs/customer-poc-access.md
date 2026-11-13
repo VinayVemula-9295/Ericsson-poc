@@ -17,7 +17,7 @@ Get-Content .env.admin | ForEach-Object {
   $pair = $_.Split('=', 2)
   [Environment]::SetEnvironmentVariable($pair[0], $pair[1], 'Process')
 }
-.\.venv\Scripts\python.exe -m streamlit run app.py
+.\.venv\Scripts\python.exe runtime_entrypoint.py
 ```
 
 Retrieve .env.admin.password locally and store it in a password manager, then
@@ -27,17 +27,24 @@ files with mode 0600. For deployment load the generated hash configuration into
 the deployment environment; deploy.sh forwards it and refuses unauthenticated
 configuration before replacing a container. Do not regenerate existing identities.
 
-Sessions are server-side Streamlit sessions tied to the browser WebSocket; no
-password or bearer token is stored in localStorage or returned in a response.
-Login resets old state. Sign-out clears cloud selections, saved-plan context and
-session identity. Idle expiry defaults to 30 minutes, absolute expiry to 8 hours;
-IIPP_SESSION_IDLE_SECONDS and IIPP_SESSION_MAX_SECONDS configure these limits.
-Expiry is enforced on the next interaction. Login failures are generic and
-limited to five attempts per username per five minutes per app process.
-For multiple replicas use a shared authentication gateway/identity provider and
-shared rate limits. Terminate TLS at the existing reverse proxy; retain Streamlit
-XSRF and CORS protections. Admin login is single-workspace authorization; enable
-the existing control plane for customer/project roles and independent approvals.
+Start the local gateway with `python runtime_entrypoint.py`; it keeps Streamlit on
+127.0.0.1:8502 and serves the same-origin browser at port 8501. Docker uses the
+same entrypoint and public port. Do not expose the internal Streamlit port.
+
+The gateway exchanges a 90-second, single-use login grant for an opaque
+HttpOnly/SameSite=Lax cookie. SQLite stores only SHA-256 hashes of session IDs
+under DATA_DIR with owner-only permissions. Browser refresh restores the user
+through a short-lived, single-use server proof; frontend identity values are not
+trusted. The server rechecks session expiry and registry users on each rerun.
+Sign-out revokes the session. Idle expiry
+defaults to 30 minutes and absolute expiry to 8 hours; IIPP_SESSION_IDLE_SECONDS
+and IIPP_SESSION_MAX_SECONDS configure those limits without extending the
+absolute creation time. Set IIPP_TRUSTED_PROXY_IPS to the trusted proxy addresses
+or CIDRs when TLS terminates before the gateway, so it can mark cookies Secure.
+Login failures are generic and limited to five attempts per username per five
+minutes per app process. Retain Streamlit XSRF and CORS protections.
+Admin login is single-workspace authorization; enable the existing control plane
+for customer/project roles and independent approvals.
 
 ## AWS roles and policies
 

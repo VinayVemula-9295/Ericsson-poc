@@ -1,0 +1,34 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body><script>
+const send = value => window.parent.postMessage({isStreamlitMessage:true,type:'streamlit:setComponentValue',value,dataType:'json'}, '*');
+let previousResponse = null;
+let previousArgs = null;
+async function execute(args) {
+  const argumentSignature = JSON.stringify(args);
+  if (argumentSignature === previousArgs) return;
+  previousArgs = argumentSignature;
+  let result;
+  try {
+    let response;
+    if (args.logout) {
+      response = await fetch('/__iipp/session/logout', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});
+    } else if (args.grant) {
+      response = await fetch('/__iipp/session/exchange', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({grant:args.grant})});
+      if (!response.ok) result = {identity:null,complete:true};
+    } else {
+      response = await fetch('/__iipp/session/identity', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});
+    }
+    if (!result) { const value = await response.json(); result = {identity:value.identity || null,complete:true}; }
+  } catch (_) { result = {identity:null,complete:false}; }
+  const payload = { ...result, grant:args.grant || null, logout:!!args.logout };
+  const signature = JSON.stringify(payload);
+  if (signature !== previousResponse) { previousResponse = signature; send(payload); }
+}
+window.addEventListener('message', event => {
+  if (event.source !== window.parent || !event.data) return;
+  if (event.data.type === 'streamlit:render') execute(event.data.args || {});
+});
+window.parent.postMessage({isStreamlitMessage:true,type:'streamlit:componentReady',apiVersion:1}, '*');
+window.parent.postMessage({isStreamlitMessage:true,type:'streamlit:setFrameHeight',height:0}, '*');
+</script></body></html>

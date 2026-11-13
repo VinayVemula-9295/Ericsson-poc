@@ -177,7 +177,7 @@ def test_reuse_tab_selects_script_without_prompt_or_evaluation(bundle, monkeypat
     record['connection_id'] = 'target'
     (directory / filename).write_text(json.dumps(record))
     page = AppTest.from_string('from agent_flow_ui import render\nrender()')
-    page.session_state['provisioning-mode'] = 'Reuse previous deployment'
+    page.session_state['provisioning-mode'] = 'Use Saved Configuration'
     page.run()
     assert not page.exception
     next(b for b in page.button if b.label == 'Reuse').click().run()

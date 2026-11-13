@@ -9,6 +9,7 @@ def agent_page(monkeypatch, tmp_path, region_catalogues):
     import provider_connections
     import agent_flow_ui
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv('IIPP_BROWSER_SESSIONS_ENABLED', 'false')
     monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
     monkeypatch.setattr(provider_connections, "list_connections", lambda: [])
     monkeypatch.setattr(agent_flow_ui, "list_connections", lambda: [])
@@ -25,7 +26,13 @@ def agent_page(monkeypatch, tmp_path, region_catalogues):
 def test_existing_sessions_receive_new_prompt_without_toggle(agent_page):
     assert not agent_page.exception
     assert len(agent_page.text_area) == 1
-    assert agent_page.text_area[0].placeholder == "Ask Intelligent Provisioning agent"
+    assert agent_page.text_area[0].placeholder == "Describe your infrastructure requirements"
+    assert agent_page.radio(key='provisioning-mode').options == ['New Deployment', 'Use Saved Configuration']
+    assert agent_page.selectbox(key='poc-prompt-preset').options == [
+        'Choose a predefined prompt', 'Create a Linux VM with 4 vCPU and 16 GiB RAM.',
+        'create a Windows VM with 4 vCPU and 16 GiB RAM.',
+        'Create a Kubernetes cluster with 2 Linux workers, each with 4 vCPU and 16 GiB RAM',
+    ]
     assert not agent_page.toggle
     assert any(b.label == "Evaluate" for b in agent_page.button)
     assert not any("Kubernetes execution" in b.label for b in agent_page.button)

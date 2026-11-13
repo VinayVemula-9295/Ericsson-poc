@@ -7,6 +7,7 @@ def test_admin_gate_and_sign_out_clear_session(monkeypatch):
     import app_auth
     password = secrets.token_urlsafe(24)
     monkeypatch.setenv('CONTROL_PLANE_ENABLED', 'false')
+    monkeypatch.setenv('IIPP_BROWSER_SESSIONS_ENABLED', 'false')
     monkeypatch.delenv('CONTROL_PLANE_USERS_FILE', raising=False)
     monkeypatch.setenv('IIPP_ADMIN_USERNAME', 'admin')
     monkeypatch.setenv('IIPP_ADMIN_PASSWORD', password)

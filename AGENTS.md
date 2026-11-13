@@ -44,7 +44,7 @@ python -m pip install -r requirements-dev.txt
 Launch the dashboard with:
 
 ```sh
-python -m streamlit run app.py
+python runtime_entrypoint.py
 ```
 
 `terraform_service.py` imports Unix `fcntl`, as do Terraform safety tests. Use

@@ -43,7 +43,7 @@ from workspace_ui import render_agent_intro, render_decision_sidebar, render_exe
 PRODUCT_NAME = "Intelligent Provisioning Platform"
 st.set_page_config(page_title=PRODUCT_NAME, layout="wide", initial_sidebar_state="auto")
 
-from shell_ui import require_demo_login, brand, sidebar_profile, header_profile
+from shell_ui import require_demo_login, brand, sidebar_profile, header_profile, footer
 st.markdown('<style>' + (Path(__file__).parent / 'assets' / 'platform.css').read_text(encoding='utf-8') + '</style>', unsafe_allow_html=True)
 require_demo_login()
 
@@ -1516,17 +1516,17 @@ def render_deployments(*, embedded: bool = False, suggested_instance_type: str |
                 st.code(record.get("plan_summary", "No plan summary."))
                 reviewer = st.text_input("Reviewer name", key=f"tf-reviewer-{did}")
                 token = st.text_input("Reviewer approval token", type="password", key=f"tf-token-{did}")
-                ack = st.checkbox("I reviewed this exact saved plan and authorize applying it to AWS.", key=f"tf-ack-{did}")
+                ack = st.checkbox("I have reviewed and approve the Terraform changes.", key=f"tf-ack-{did}")
                 if st.button("Approve and apply saved Terraform plan", key=f"tf-apply-{did}", type="primary", disabled=not (enabled and reviewer.strip() and token and ack)):
                     expected = _approval_token()
                     if not expected or not hmac.compare_digest(token, expected):
                         st.error("Approval token did not match; plan was not applied.")
                     else:
-                        with st.spinner("Applying the exact checksummed saved plan…"):
+                        with st.spinner("Applying the approved Terraform plan…"):
                             applied = apply_saved_plan(did, reviewer)
                         _append_audit({"timestamp": datetime.now(timezone.utc).isoformat(), "deployment_id": did,
                                        "status": applied.get("status"), "action": "terraform-apply", "reviewer": reviewer})
-                        if applied.get("status") == "SUCCEEDED": st.success("Terraform apply succeeded and outputs were retrieved.")
+                        if applied.get("status") == "SUCCEEDED": st.success("The Terraform Apply completed successfully.")
                         else: st.error(applied.get("error", "Terraform apply failed."))
                         st.rerun()
             if not embedded and record.get("status") in {"SUCCEEDED", "DESTROY_PLAN_FAILED", "DESTROY_FAILED"}:
@@ -1664,3 +1664,4 @@ elif page == 'Deployment':
     render_deployment_history()
 else:
     render_agent()
+footer()

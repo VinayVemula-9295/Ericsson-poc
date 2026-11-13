@@ -65,7 +65,7 @@ def render():
         else:
             st.info('No provisioning activity recorded yet.')
         _, action = st.columns([5, 1])
-        if action.button('View all', key='view-all-deployments', use_container_width=True):
+        if action.button('View all', key='view-all-deployments', use_container_width=True, type='primary'):
             for key in ('history-search', 'history-status', 'history-provider', 'history-page'):
                 st.session_state.pop(key, None)
             st.session_state['requested-page'] = 'Deployment'

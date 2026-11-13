@@ -161,7 +161,7 @@ def test_destroy_workflow_lives_in_deployments():
     ui = (ROOT / "deployment_history_ui.py").read_text(encoding="utf-8")
     assert "render_work_resource_lifecycle" not in app
     assert 'st.button("Destroy"' in ui
-    assert 'st.button("Submit"' in ui
+    assert 'submit_column.button("Submit"' in ui
     assert 'service.apply_destroy_plan(row["deployment_id"], reviewer, token)' in ui
 
 

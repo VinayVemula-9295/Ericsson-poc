@@ -35,7 +35,7 @@ def context_selector():
 
 def login():
     from shell_ui import require_demo_login
-    require_demo_login()
+    require_demo_login(browser_restore=False)
 
 
 def submission(source, deployment_id):

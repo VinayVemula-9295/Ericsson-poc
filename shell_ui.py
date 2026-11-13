@@ -1,10 +1,15 @@
 """Shared branded header and authenticated workspace entry."""
 from pathlib import Path
 import base64
+import os
 import time
 import streamlit as st
 
 PRODUCT = 'Intelligent Provisioning Platform'
+
+
+def footer():
+    st.markdown('<footer class="iipp-footer"><span>Copyright @2026, </span><span class="iipp-footer-brand">Innominds Software Inc.</span><span> All rights reserved.</span></footer>', unsafe_allow_html=True)
 
 
 def brand():
@@ -13,10 +18,55 @@ def brand():
     st.markdown(f'<div class="header-brand"><img alt="Innominds" src="data:image/png;base64,{encoded}"><span>{PRODUCT}</span></div>', unsafe_allow_html=True)
 
 
-def require_demo_login():
-    """Compatibility entry point; demo bypass has been removed."""
+def require_demo_login(*, browser_restore=True):
+    """Restore browser-cookie sessions before showing the login form."""
     import app_auth
     from control_plane import enabled, principal
+    browser_sessions = os.getenv('IIPP_BROWSER_SESSIONS_ENABLED', 'false').lower() == 'true'
+    if browser_sessions and browser_restore:
+        from browser_session_component import browser_identity
+        logout = bool(st.session_state.pop('iipp-browser-logout', False))
+        grant = st.session_state.get('iipp-pending-grant')
+        response = browser_identity(grant=grant, logout=logout)
+        completed = isinstance(response, dict) and response.get('complete')
+        matching = completed and response.get('grant') == grant and response.get('logout') == logout
+        if matching:
+            st.session_state['iipp-session-check-done'] = True
+            if grant:
+                st.session_state.pop('iipp-pending-grant', None)
+            if logout:
+                st.session_state.pop('iipp-auth', None)
+            elif response.get('identity'):
+                proof = response['identity'].get('proof')
+                if proof != st.session_state.get('iipp-consumed-proof'):
+                    from browser_sessions import consume_identity_proof
+                    identity = consume_identity_proof(proof)
+                    st.session_state['iipp-consumed-proof'] = proof
+                    if identity:
+                        st.session_state['iipp-auth'] = identity
+                    else:
+                        st.session_state.pop('iipp-auth', None)
+            else:
+                st.session_state.pop('iipp-auth', None)
+        elif response is None and not st.session_state.get('iipp-session-check-done') and not grant and not logout:
+            st.info('Restoring your secure session…')
+            footer()
+            st.stop()
+        elif (grant or logout) and response is not None and completed and not matching:
+            st.info('Restoring your secure session…')
+            footer()
+            st.stop()
+    if browser_sessions:
+        from browser_sessions import restore_hash
+        auth = st.session_state.get('iipp-auth') or {}
+        identity = restore_hash(auth.get('session_key'))
+        if identity:
+            st.session_state['iipp-auth'] = identity
+            username = identity['username']
+            st.session_state['control-plane-user'] = username
+            st.session_state['demo-profile'] = dict(name=username, initials=username[:2].upper(), role=identity['role'])
+        else:
+            st.session_state.pop('iipp-auth', None)
     if app_auth.session_valid(st.session_state):
         if enabled() or app_auth.uses_registry():
             try:
@@ -47,20 +97,30 @@ def require_demo_login():
             except (KeyError, OSError, ValueError, TypeError):
                 user = None
             if user:
-                sign_out()
-                stamp = time.time()
-                st.session_state['iipp-auth'] = dict(user, created=stamp, last_seen=stamp)
-                st.session_state['control-plane-user'] = user['username']
-                st.session_state['demo-profile'] = dict(name=user['username'], initials=user['username'][:2].upper(), role=user['role'])
+                for key in list(st.session_state):
+                    st.session_state.pop(key, None)
+                if browser_sessions:
+                    from browser_sessions import issue_grant
+                    st.session_state['iipp-pending-grant'] = issue_grant(user)
+                else:
+                    stamp = time.time()
+                    st.session_state['iipp-auth'] = dict(user, created=stamp, last_seen=stamp)
+                    st.session_state['control-plane-user'] = user['username']
+                    st.session_state['demo-profile'] = dict(name=user['username'], initials=user['username'][:2].upper(), role=user['role'])
                 st.rerun()
             st.error('Unable to sign in. Check your credentials or try again in five minutes.')
         st.caption('Authorized access only. Sessions expire automatically after inactivity.')
+    footer()
     st.stop()
 
-
 def sign_out():
+    session_key = (st.session_state.get('iipp-auth') or {}).get('session_key')
+    if session_key:
+        from browser_sessions import revoke_hash
+        revoke_hash(session_key)
     for key in list(st.session_state):
         del st.session_state[key]
+    st.session_state['iipp-browser-logout'] = True
 
 
 def sidebar_profile():
@@ -76,4 +136,4 @@ def header_profile():
     with st.popover(profile['initials'], help='Open profile'):
         st.write(profile['name'])
         st.caption(profile['role'])
-        st.button('Sign out', on_click=sign_out, use_container_width=True)
+        st.button('Sign out', on_click=sign_out, use_container_width=True, type='primary')

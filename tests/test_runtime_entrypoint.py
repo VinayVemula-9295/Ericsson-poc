@@ -20,20 +20,27 @@ def test_worker_exit_stops_web_process(monkeypatch):
     assert web.terminated
 
 
-def test_enabled_runtime_starts_both_processes(monkeypatch):
+def test_enabled_runtime_starts_gateway_web_and_worker(monkeypatch):
     import control_plane
+    monkeypatch.setenv('IIPP_BROWSER_SESSIONS_ENABLED', 'false')
+    monkeypatch.setenv('IIPP_STREAMLIT_URL', 'http://127.0.0.1:8502')
     monkeypatch.setattr(control_plane, 'enabled', lambda: True)
     monkeypatch.setattr(control_plane, 'users', lambda: {'admin': {'role': 'administrator'}})
     calls = []
     monkeypatch.setattr(runtime, 'supervise', lambda commands: calls.extend(commands) or 0)
     assert runtime.main() == 0
-    assert len(calls) == 2
-    assert calls[1][-1] == 'control_plane_worker.py'
+    assert len(calls) == 3
+    assert calls[0][-1] == 'session_gateway.py'
+    assert '--server.address=127.0.0.1' in calls[1]
+    assert '--server.port=8502' in calls[1]
+    assert calls[2][-1] == 'control_plane_worker.py'
 
 
 def test_missing_admin_refuses_startup(monkeypatch):
     import control_plane
     import pytest
+    monkeypatch.setenv('IIPP_BROWSER_SESSIONS_ENABLED', 'false')
+    monkeypatch.setenv('IIPP_STREAMLIT_URL', 'http://127.0.0.1:8502')
     monkeypatch.setattr(control_plane, 'enabled', lambda: True)
     monkeypatch.setattr(control_plane, 'users', lambda: {})
     with pytest.raises(ValueError):
