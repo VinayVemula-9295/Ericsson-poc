@@ -72,6 +72,32 @@ def render(connections):
     provider = st.session_state.get('hierarchy-provider')
     if provider in snapshots:
         explorer(provider, snapshots[provider])
+    requested = st.session_state.get('iipp-pending-account-dialog') or st.session_state.get('iipp-account-dialog-active')
+    if requested:
+        provider = requested['provider']
+        snapshot = snapshots.get(provider)
+        account = next((row for row in account_summaries(provider, snapshot)
+                        if row['id'] == requested['account_id'] and row['owner'] == requested['owner']), None) if snapshot else None
+        if not account:
+            st.session_state.pop('iipp-pending-account-dialog', None)
+            st.session_state.pop('iipp-account-dialog-active', None)
+        elif _claim_account_dialog():
+            st.session_state.pop('iipp-pending-account-dialog', None)
+            st.session_state['iipp-account-dialog-active'] = {
+                'provider': provider, 'account_id': account['id'], 'owner': account['owner']}
+            account_dialog(provider, account, snapshot)
+
+
+def _claim_account_dialog():
+    from dialog_guard import claim_dialog
+    return claim_dialog()
+
+
+def _clear_account_dialog_state():
+    st.session_state.pop('iipp-account-dialog-active', None)
+    st.session_state.pop('iipp-pending-account-dialog', None)
+    for provider in ('AWS', 'Azure', 'GCP'):
+        st.session_state.pop(provider + '-account-table', None)
 
 
 def render_accounts(provider, snapshot):
@@ -95,10 +121,15 @@ def render_accounts(provider, snapshot):
             event = st.dataframe(display, hide_index=True, use_container_width=True,
                 on_select='rerun', selection_mode='single-row', key=provider + '-account-table')
             if event.selection.rows:
-                account_dialog(provider, rows[event.selection.rows[0]], snapshot)
+                account = rows[event.selection.rows[0]]
+                active = st.session_state.get('iipp-account-dialog-active') or {}
+                identity = (provider, account['id'], account['owner'])
+                if (active.get('provider'), active.get('account_id'), active.get('owner')) != identity:
+                    st.session_state['iipp-pending-account-dialog'] = {
+                        'provider': provider, 'account_id': account['id'], 'owner': account['owner']}
 
 
-@st.dialog('Account resources and billing', width='large')
+@st.dialog('Account resources and billing', width='large', on_dismiss=_clear_account_dialog_state)
 def account_dialog(provider, account, snapshot):
     from cost_dashboard_ui import money
     st.subheader(account['name'])

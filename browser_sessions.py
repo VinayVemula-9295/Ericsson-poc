@@ -82,7 +82,9 @@ def restore_hash(session_hash):
             db.execute('UPDATE sessions SET revoked=1 WHERE token_hash=?', (session_hash,))
             return None
         db.execute('UPDATE sessions SET last_seen=? WHERE token_hash=?', (now, session_hash))
-    if os.getenv('CONTROL_PLANE_ENABLED', 'false').lower() == 'true' or os.getenv('CONTROL_PLANE_USERS_FILE'):
+    registry_file = os.getenv('CONTROL_PLANE_USERS_FILE')
+    registry_enabled = os.getenv('CONTROL_PLANE_ENABLED', 'false').lower() == 'true'
+    if registry_enabled or (registry_file and Path(registry_file).is_file()):
         try:
             import control_plane as cp
             user = cp.users().get(row['username'])

@@ -155,7 +155,7 @@ def tier_choices(rows, request):
 
 def execution_restriction(row):
     if row.get("provider") != "AWS":
-        return None
+        return f"{row.get('provider')} plan and apply are not enabled in this release."
     from policy_engine import validate_aws_launch
     try:
         validate_aws_launch(row["region"], row["sku"])
@@ -182,7 +182,8 @@ def render():
         clear_result()
     if st.session_state.get('provisioning-mode') not in {'New Deployment', 'Use Saved Configuration'}:
         st.session_state['provisioning-mode'] = 'New Deployment'
-    mode = st.radio('Infrastructure Provisioning', ['New Deployment', 'Use Saved Configuration'], horizontal=True, key='provisioning-mode')
+    mode = st.radio('Infrastructure Provisioning', ['New Deployment', 'Use Saved Configuration'], horizontal=True, key='provisioning-mode',
+                    format_func=lambda value: 'Use Existing Server Configurations' if value == 'Use Saved Configuration' else value)
     if mode == 'Use Saved Configuration':
         from reuse_ui import render as render_reuse
         render_reuse()
@@ -198,42 +199,44 @@ def render():
         catalogues = dict(zip(("AWS", "Azure", "GCP"), executor.map(load_regions, ("AWS", "Azure", "GCP"))))
     st.markdown("## Describe workload and constraints")
     templates = [
+        'Need a Windows VM with 2 vCPU and 4 GiB RAM',
         'Create a Linux VM with 4 vCPU and 16 GiB RAM.',
         'create a Windows VM with 4 vCPU and 16 GiB RAM.',
         'Create a Kubernetes cluster with 2 Linux workers, each with 4 vCPU and 16 GiB RAM',
     ]
-    st.selectbox('Infrastructure blueprint', [''] + templates, key='poc-prompt-preset',
-                 label_visibility='collapsed', on_change=_choose_prompt,
-                 format_func=lambda value: 'Choose a predefined prompt' if not value else value)
+    st.selectbox('Choose Predefined Prompts', templates, index=None,
+                 placeholder='Need a Windows VM with 2 vCPU and 4 GiB RAM',
+                 key='poc-prompt-preset', label_visibility='collapsed', on_change=_choose_prompt)
     with st.form("agent-prompt", border=False):
-        with st.expander("Customize Configuration"):
-            regions, contexts = st.columns(3), []
-            for column, (provider, default) in zip(regions, (("AWS", "ap-south-1"), ("Azure", "centralindia"), ("GCP", "asia-south1"))):
-                with column:
-                    catalogue = catalogues[provider]
-                    rows = catalogue["regions"] if catalogue else []
-                    values = [r["value"] for r in rows]
-                    labels = {r["value"]: r["label"] for r in rows}
-                    region_key = "poc-region-" + provider
-                    if st.session_state.get(region_key) not in values:
-                        st.session_state[region_key] = default if default in values else next(iter(values), None)
-                    region = st.selectbox(provider + " region", values, key=region_key,
-                                          format_func=lambda value, names=labels: names[value], disabled=not values)
-                    if not catalogue:
-                        st.caption("Official region list unavailable. This provider will be skipped; reload to retry.")
-                        continue
-                    matching = [c for c in connections if c["provider"] == provider]
-                    preferred_connection = st.session_state.get('reuse-draft', {}).get('connection_id') or context[1]
-                    conn = next((c for c in matching if c["connection_id"] == preferred_connection), next(iter(matching), {}))
-                    zone = conn.get("metadata", {}).get("default_zone", "")
-                    if provider == "GCP":
-                        zones = next(r["zones"] for r in rows if r["value"] == region)
-                        zone = zone if zone in zones else zones[0]
-                    contexts.append((provider, region.strip(), zone, conn.get("connection_id")))
+        st.markdown("### Select Region")
+        regions, contexts = st.columns(3), []
+        for column, (provider, default) in zip(regions, (("AWS", "ap-south-1"), ("Azure", "centralindia"), ("GCP", "asia-south1"))):
+            with column:
+                catalogue = catalogues[provider]
+                rows = catalogue["regions"] if catalogue else []
+                values = [r["value"] for r in rows]
+                labels = {r["value"]: r["label"] for r in rows}
+                region_key = "poc-region-" + provider
+                if st.session_state.get(region_key) not in values:
+                    st.session_state[region_key] = default if default in values else next(iter(values), None)
+                region = st.selectbox(provider + " Region", values or [None], key=region_key,
+                                      format_func=lambda value, names=labels: names.get(value, "Unavailable"),
+                                      disabled=not values)
+                if not catalogue:
+                    st.caption("Official region list unavailable. This provider will be skipped; reload to retry.")
+                    continue
+                matching = [c for c in connections if c["provider"] == provider]
+                preferred_connection = st.session_state.get('reuse-draft', {}).get('connection_id') or context[1]
+                conn = next((c for c in matching if c["connection_id"] == preferred_connection), next(iter(matching), {}))
+                zone = conn.get("metadata", {}).get("default_zone", "")
+                if provider == "GCP":
+                    zones = next(r["zones"] for r in rows if r["value"] == region)
+                    zone = zone if zone in zones else zones[0]
+                contexts.append((provider, region.strip(), zone, conn.get("connection_id")))
         with st.container(key="agent-composer"):
             prompt_column, send_column = st.columns([8, 1], vertical_alignment="center")
             prompt_column.text_area("Describe your infrastructure requirements", key="poc-prompt", height=90,
-                                   label_visibility="collapsed", placeholder="Describe your infrastructure requirements")
+                                   label_visibility="collapsed", placeholder="Example: I need 2 vCPU and 1 GiB RAM Linux server")
             with send_column:
                 submit = st.form_submit_button("Evaluate", icon=":material/arrow_upward:", type="primary")
     if submit:
@@ -252,7 +255,7 @@ def render():
                 raise ValueError("Include permitted region IDs in your prompt for this residency requirement.")
             if request["kind"] == "Kubernetes" and request["os"] == "Windows":
                 raise ValueError("Managed Kubernetes currently requires Linux workers.")
-            with st.spinner("Finding configurations and explaining provider evidence…"):
+            with st.spinner("Finding configuration"):
                 collect(request, contexts, (request["pod_cpu"], request["pod_memory_gib"],
                                             request["replicas"], request["tolerate_node_failure"]))
         except (ValueError, KeyError, TypeError) as exc:
@@ -265,68 +268,115 @@ def render():
         with st.expander('Evaluated requirements'):
             st.write({k: request.get(k) for k in ('kind', 'os', 'min_vcpus', 'min_memory_gib', 'budget_monthly', 'worker_count', 'residency_regions') if request.get(k) is not None})
             st.caption('Evaluation discovers options and estimates only. Infrastructure is created after plan review and independent approval.')
+    st.markdown("### Requested workload")
+    st.info(f"{request['os']} {request['kind']} · {request['min_vcpus']} vCPU / {request['min_memory_gib']:g} GiB RAM" +
+            (f" · {request['worker_count']} workers" if request.get('worker_count') else ""))
     st.markdown(st.session_state["poc-explanation"])
     for error in errors:
         st.warning(error)
     if request["defaults_used"]:
         st.caption("Inferred requirements: " + "; ".join(request["defaults_used"]))
-    tabs = st.tabs(["AWS", "Azure", "GCP"])
-    for tab, provider in zip(tabs, ("AWS", "Azure", "GCP")):
-        with tab:
-            for column, (tier, row) in zip(st.columns(3), tier_choices([r for r in options if r["provider"] == provider], request)):
-                with column, st.container(border=True):
+    selected_now = st.session_state.get("poc-selected") or {}
+    selected_signature = (selected_now.get("provider"), selected_now.get("sku"), selected_now.get("region"))
+    for provider in ("AWS", "Azure", "GCP"):
+        st.markdown(f"### {provider}")
+        provider_rows = [r for r in options if r["provider"] == provider]
+        choices = tier_choices(provider_rows, request)
+        for column, (tier, evidence_row) in zip(st.columns(3), choices):
+            illustrative = evidence_row is None and provider in {"Azure", "GCP"}
+            row = evidence_row
+            if illustrative:
+                # Workload-derived display sample only; never used for pricing, selection or execution.
+                cpu, ram = request["min_vcpus"], request["min_memory_gib"]
+                if tier == "Recommended":
+                    cpu, ram = max(cpu + 1, int(cpu * 1.25 + .999)), max(ram + 1, round(ram * 1.25, 1))
+                elif tier == "Optimal":
+                    cpu, ram = max(cpu + 2, int(cpu * 1.5 + .999)), max(ram + 2, round(ram * 1.5, 1))
+                row = {"provider": provider, "sku": "Illustrative sample", "region": "Not verified",
+                       "vcpus": cpu, "memory_gib": ram, "os": request["os"],
+                       "monthly_compute_estimate": None, "illustrative": True}
+            with column:
+                signature = (provider, row.get("sku"), row.get("region")) if row else None
+                selected_card = signature is not None and signature == selected_signature and not illustrative
+                card_key = f"agent-config-card-{provider.lower()}-{tier.lower()}"
+                if selected_card:
+                    st.markdown(f'<style>.st-key-{card_key} [data-testid="stVerticalBlockBorderWrapper"]{{border:2px solid #633bd3!important;box-shadow:0 0 0 3px #633bd31a}}</style>', unsafe_allow_html=True)
+                with st.container(border=True, key=card_key):
                     st.markdown("#### " + tier)
-                    if tier == 'ASK':
-                        st.write(f"Requested: {request['min_vcpus']} vCPU / {request['min_memory_gib']:g} GiB")
+                    if selected_card:
+                        st.success("Selected configuration")
                     if row is None:
-                        st.caption("No exact eligible match available for your request." if tier == "ASK" else
-                                   "No eligible upgrade available")
+                        st.info("No verified configuration is available for this request.")
+                        st.caption("The provider returned no eligible option; no sample is shown for AWS.")
                         continue
-                    st.markdown("**" + row["sku"] + "**")
+                    if illustrative:
+                        st.warning("Illustrative only · not live-verified")
+                        st.markdown("**Sample configuration**")
+                    else:
+                        st.markdown("**" + str(row.get("sku") or "Configuration") + "**")
                     if request["kind"] == "Kubernetes":
                         st.markdown("**" + {"AWS": "Amazon EKS", "Azure": "Azure AKS", "GCP": "Google GKE"}[provider] + "**")
                     st.write(f"{row['vcpus']} vCPU · {row['memory_gib']:g} GiB · {row['os']}")
-                    st.caption(row["region"])
-                    st.caption({"ASK": "Your original requested capacity; exact matches only",
-                                "Recommended": "Recommended eligible configuration",
-                                "Optimal": "Next CPU/RAM upgrade from Recommended"}[tier])
-                    if request["kind"] == "Kubernetes":
-                        st.write(f"{row['cluster']['node_count']} worker nodes · CPU/RAM shown per node")
-                        price = row.get("node_monthly_compute_estimate")
-                        if price is not None:
-                            st.caption(f"Per worker compute: ${price:.2f}/month")
-                    st.metric("Estimated compute / month", f"${row['monthly_compute_estimate']:.2f}")
-                    if provider == "AWS" and row.get("price_source"):
-                        st.caption(str(row["price_source"]))
-                    if provider == "AWS" and row.get("price_retrieved_at"):
-                        st.caption("Price checked (UTC): " + str(row["price_retrieved_at"]))
+                    st.caption(row.get("region", "Region unavailable"))
+                    st.caption({"ASK": "Requested capacity; exact matches only",
+                                "Recommended": "Balanced eligible configuration",
+                                "Optimal": "Lowest-priced eligible configuration"}[tier])
+                    if request["kind"] == "Kubernetes" and not illustrative:
+                        cluster = row.get("cluster", {})
+                        st.write(f"{cluster.get('node_count', '—')} worker nodes · CPU/RAM shown per node")
+                    price = row.get("monthly_compute_estimate")
+                    st.metric("Estimated compute cost / month", f"${price:.2f}" if isinstance(price, (int, float)) else "Unavailable")
+                    if illustrative:
+                        st.caption("Sample values are derived from your request. No provider capacity or price was verified.")
+                    elif price is None:
+                        st.caption("Pricing is unavailable from the configured pricing source.")
+                    elif provider in {"Azure", "GCP"}:
+                        st.caption("Public catalogue estimate; not proof of connected-account capacity.")
+                    else:
+                        st.caption("Monthly compute estimate; other infrastructure charges may apply.")
                     restriction = execution_restriction(row)
                     if restriction:
-                        st.caption("Configuration editable; planning and deployment restricted: " + restriction)
-                    elif provider != "AWS":
-                        st.caption("Public catalogue compute estimate")
-                    if st.button("Use Configuration", key=f"use-{provider}-{tier}", use_container_width=True):
-                        clear_draft_state()
-                        st.session_state["poc-selected"] = dict(row)
-                        st.session_state["poc-form-version"] = st.session_state.get("poc-form-version", 0) + 1
-                        st.session_state['poc-configuration-notice'] = True
-                        event("CONFIGURATION_SELECTED", provider=provider, sku=row["sku"], region=row["region"])
+                        st.caption(restriction)
+                    enabled = not illustrative and not selected_card
+                    if st.button("Use This Configuration", key=f"use-{provider}-{tier}",
+                                 use_container_width=True, disabled=not enabled,
+                                 help="Sample cards cannot be selected." if illustrative else restriction):
+                        previous_selection = st.session_state.get("poc-selected")
+                        try:
+                            with st.spinner("Finding configuration"):
+                                clear_draft_state()
+                                st.session_state["poc-selected"] = dict(row)
+                                st.session_state["poc-form-version"] = st.session_state.get("poc-form-version", 0) + 1
+                                st.session_state['poc-configuration-notice'] = True
+                                st.session_state['poc-scroll-to-inputs'] = True
+                                event("CONFIGURATION_SELECTED", provider=provider, sku=row["sku"], region=row["region"])
+                        except Exception:
+                            if previous_selection is None:
+                                st.session_state.pop("poc-selected", None)
+                            else:
+                                st.session_state["poc-selected"] = previous_selection
+                            st.session_state.pop('poc-configuration-notice', None)
+                            st.session_state.pop('poc-scroll-to-inputs', None)
+                            st.error("Configuration selection failed. Choose the configuration again or refresh discovery.")
     selected = st.session_state.get("poc-selected")
     if selected:
         if st.session_state.pop('poc-configuration-notice', False):
-            st.info('Please fill in the required Terraform input fields to generate your infrastructure configuration')
+            st.info('Fill in the form below to generate your infrastructure configuration.')
+        if st.session_state.pop('poc-scroll-to-inputs', False):
+            st.html("<script>window.parent.document.getElementById('infrastructure-configuration-inputs')?.scrollIntoView({behavior:'smooth',block:'start'});</script>", unsafe_allow_javascript=True)
         render_inputs(selected, request)
 
 
 def render_inputs(selected, request, reuse_from=None):
     from poc_terraform import configuration
     from provider_inputs import discover, compatible_choices
-    st.subheader("Terraform inputs")
+    st.markdown('<div id="infrastructure-configuration-inputs"></div>', unsafe_allow_html=True)
+    st.subheader("Infrastructure Configuration Inputs")
     restriction = execution_restriction(selected)
     if restriction:
         for key in ("poc-saved-plan", "poc-open-plan", "poc-open-approval", "poc-open-success"):
             st.session_state.pop(key, None)
-        st.warning("You can edit this configuration. Terraform planning and deployment are blocked by the current AWS policy.")
+        st.warning("You can edit this configuration. Planning and deployment are restricted: " + restriction)
         st.caption(restriction)
     if st.session_state.pop("poc-editing", False):
         st.info("Edit the preserved inputs below, then generate and review a new Terraform plan.")
@@ -455,15 +505,15 @@ def render_inputs(selected, request, reuse_from=None):
             st.session_state.pop(key, None)
         st.session_state['draft-input-hash'] = input_hash
     initiator = st.text_input('Initiated by', key='provisioning-initiator', help='User-supplied identity recorded separately from the approver.')
-    if st.button('Generate Terraform IaC', type='primary'):
+    if st.button('Configure / Terraform Plan', type='primary'):
         st.session_state['iac-draft'] = json.dumps(generate(selected, request, inputs), indent=2)
         st.session_state['terraform-code'] = st.session_state['iac-draft']
         st.session_state.pop('iac-validation', None)
     if 'iac-draft' not in st.session_state:
         return
-    st.caption('Generated Terraform JSON and input values. Edit supported inputs only; account, region, provider and resource structure are protected.')
+    st.caption('Terraform configuration and input values have been generated. If you are familiar with Terraform, you can edit the script; otherwise, leave it unchanged and proceed to the next step.')
     from streamlit_ace import st_ace
-    st.markdown('#### Terraform code and inputs')
+    st.markdown('#### Optional Terraform script')
     code = st_ace(value=st.session_state['terraform-code'], language='json', theme='tomorrow_night',
                   height=420, font_size=14, tab_size=2, auto_update=True,
                   key='terraform-editor-' + fingerprint(st.session_state['iac-draft']))
@@ -479,7 +529,7 @@ def render_inputs(selected, request, reuse_from=None):
         try:
             validate(code, selected, request, inputs)
             st.session_state['iac-validation'] = code_hash
-            st.success('Terraform code has been validated successfully.')
+            st.success('Terraform configuration has been validated successfully.')
         except ValueError as exc:
             st.session_state.pop('iac-validation', None)
             st.session_state.pop('poc-saved-plan', None)
@@ -488,12 +538,12 @@ def render_inputs(selected, request, reuse_from=None):
     payload_hash = fingerprint((input_hash, code, initiator))
     st.session_state['poc-input-fingerprint'] = payload_hash
     if st.session_state.get('iac-validation') == code_hash and st.button(
-            'Generate Terraform', type='primary', key='generate-terraform-plan',
+            'Generate Terraform Plan', type='primary', key='generate-terraform-plan',
             disabled=bool(restriction) or not initiator.strip()):
         try:
             draft = validate(code, selected, request, inputs)
             from poc_planner import prepare
-            with st.spinner('Validating Terraform and generating a saved plan…'):
+            with st.spinner('Validating configuration and generating a saved plan…'):
                 record = prepare(selected, dict(request, initiated_by=initiator.strip(),
                     source_deployment=st.session_state.get('reuse-draft', {}).get('source_deployment')),
                     draft['inputs'], request.get('latency_evidence', []))
@@ -503,23 +553,31 @@ def render_inputs(selected, request, reuse_from=None):
             st.error('Terraform planning requires the Linux application runner.')
         except ValueError as exc:
             st.error(str(exc))
-        except Exception:
-            st.error('Planning failed. Review protected runner diagnostics. No infrastructure was applied.')
+        except Exception as exc:
+            detail = str(exc)
+            if any(token in detail.lower() for token in ('accessdenied', 'unauthorizedoperation', 'not authorized to perform', 'no identity-based policy allows')):
+                st.error('AWS authorization denied the plan: ' + detail[:700])
+            else:
+                st.error('Planning failed. Review protected runner diagnostics. No infrastructure was applied.')
     record = st.session_state.get("poc-saved-plan")
     if record:
         st.caption("Saved plan · " + record["deployment_id"] + " · " + record["status"])
+        from dialog_guard import claim_dialog
         if st.button("View Terraform plan"):
             st.session_state["poc-open-plan"] = True
         if record["status"] == "SUCCEEDED":
             st.success("Infrastructure created successfully.")
         elif record["status"] == "FAILED":
             st.error("Apply failed. Review Terraform state and runner diagnostics before planning another change.")
-        elif st.button("Terraform apply", type="primary", key="terraform-apply") or st.session_state.get("poc-open-approval"):
+        elif st.button("Terraform apply", type="primary", key="terraform-apply"):
             st.session_state["poc-open-approval"] = True
+        if st.session_state.get("poc-open-approval") and claim_dialog():
             approval_dialog(record["deployment_id"], payload_hash)
-        if st.session_state.pop("poc-open-plan", False):
+        if st.session_state.get("poc-open-plan") and claim_dialog():
+            st.session_state.pop("poc-open-plan", None)
             plan_dialog(record)
-        elif st.session_state.pop("poc-open-success", False):
+        elif st.session_state.get("poc-open-success") and claim_dialog():
+            st.session_state.pop("poc-open-success", None)
             success_dialog(record)
 
 
@@ -566,22 +624,24 @@ def success_dialog(record):
 
 @st.dialog("Approve Terraform apply", width="large")
 def approval_dialog(deployment_id, payload_hash):
+    record = st.session_state.get("poc-saved-plan", {})
+    if record.get("deployment_id") != deployment_id or st.session_state.get("poc-input-fingerprint") != payload_hash:
+        st.error("Configuration changed. Generate and review a new plan.")
+        return
     from control_plane import enabled
     if enabled():
         from control_plane_ui import submission
         source = 'terraform_deployments' if deployment_id.startswith('cp-') else 'poc_plans'
         submission(source, deployment_id)
         return
-    record = st.session_state.get("poc-saved-plan", {})
-    if record.get("deployment_id") != deployment_id or st.session_state.get("poc-input-fingerprint") != payload_hash:
-        st.error("Configuration changed. Generate and review a new plan.")
-        return
+    from cost_summary import render as render_cost_summary
+    render_cost_summary(record)
     st.caption("Apply saved plan " + deployment_id)
     st.code(record["plan_summary"], language="hcl")
     with st.form("terraform-approval", clear_on_submit=True):
         reviewer = st.text_input("Approver name", key="tf-approver")
         token = st.text_input("Approval token", type="password", key="tf-approval-token")
-        acknowledge = st.checkbox("I have reviewed and approve the Terraform changes.")
+        acknowledge = st.checkbox("I reviewed this exact plan and the displayed cost estimate, including any unavailable pricing notice.")
         apply = st.form_submit_button("Approve and apply", type="primary")
     if apply:
         try:

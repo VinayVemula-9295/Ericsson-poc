@@ -37,6 +37,15 @@ def test_successful_reuse_without_state_copies_only_sources(bundle, tmp_path):
     assert (destination / '.terraform.lock.hcl').read_text() == 'locked'
 
 
+def test_intact_destroyed_bundle_can_be_loaded_for_reprovision(bundle):
+    source, directory, record, filename = bundle
+    record['status'] = 'DESTROYED'
+    (directory / filename).write_text(json.dumps(record))
+    _, saved, _ = load(*source)
+    assert saved['status'] == 'DESTROYED'
+    assert saved['reuse_manifest'] == record['reuse_manifest']
+
+
 def test_modified_missing_or_extra_source_blocks_reuse(bundle):
     source, directory, record, filename = bundle
     path = directory / 'terraform.tfvars.json'
@@ -126,7 +135,7 @@ def test_reuse_grid_only_successful_with_details_and_disabled_missing_bundle(mon
     monkeypatch.setattr(reuse_ui, 'availability', lambda row: 'Verified bundle unavailable')
     page = AppTest.from_string('from reuse_ui import render\nrender()').run()
     assert not page.exception
-    assert next(b for b in page.button if b.label == 'Reuse').disabled
+    assert next(b for b in page.button if b.label == 'Use This Configuration').disabled
     assert len([b for b in page.button if b.label == 'Details']) == 1
     assert any(m.value == '2 vCPU · 1 GiB RAM' for m in page.markdown)
     assert 'Failed server' not in '\n'.join(m.value for m in page.markdown)
@@ -154,7 +163,7 @@ def test_empty_reuse_search_does_not_query_agent(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_flow_ui, 'collect', lambda *_: pytest.fail('Empty reuse must not evaluate an Agent request'))
     page = AppTest.from_string('from reuse_ui import render\nrender()').run()
     assert not page.exception
-    assert any('No verified successful deployments' in x.value for x in page.info)
+    assert any('No verified saved configurations' in x.value for x in page.info)
     assert not page.text_input
     page.run()
     assert not page.exception
@@ -180,7 +189,7 @@ def test_reuse_tab_selects_script_without_prompt_or_evaluation(bundle, monkeypat
     page.session_state['provisioning-mode'] = 'Use Saved Configuration'
     page.run()
     assert not page.exception
-    next(b for b in page.button if b.label == 'Reuse').click().run()
+    next(b for b in page.button if b.label == 'Use This Configuration').click().run()
     assert not page.exception
     assert any(x.label == 'VM name' for x in page.text_input)
     assert not page.text_area

@@ -52,6 +52,14 @@ def test_disabled_registry_user_is_revoked(monkeypatch, tmp_path):
     assert browser_sessions.restore(session) is None
 
 
+def test_missing_optional_registry_file_does_not_revoke_browser_session(monkeypatch, tmp_path):
+    _configure_store(monkeypatch, tmp_path)
+    monkeypatch.setenv('CONTROL_PLANE_USERS_FILE', str(tmp_path / 'not-mounted-users.json'))
+    session = browser_sessions.exchange_grant(browser_sessions.issue_grant(
+        {'username': 'admin', 'role': 'administrator'}))
+    assert browser_sessions.restore(session)['username'] == 'admin'
+
+
 def test_saved_configuration_masks_account_identifiers():
     assert mask_account_identifier('333347372766') == '33xxxxxxx766'
     assert mask_account_identifier('arn:aws:iam::333347372766:role/runner') == 'arn:aws:iam::33xxxxxxx766:role/runner'

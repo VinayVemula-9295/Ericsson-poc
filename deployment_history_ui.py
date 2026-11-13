@@ -94,9 +94,11 @@ def _destroy_success(details):
 
 @st.dialog("Deployment details", width="large")
 def _details(row):
+    identity_label = {"AWS": "Account", "Azure": "Subscription", "GCP": "Project"}.get(row["provider"], "Identity")
     st.write({
         "Deployment": row["name"], "Deployment ID": row["deployment_id"],
-        "Cloud": row["provider"], "Account / Subscription / Project": row["target"],
+        "Cloud": row["provider"], identity_label + " name": row.get("account_name", "Name not recorded"),
+        identity_label + " ID": row.get("identity_id", row["target"]),
         "Region": row["region"], "Status": row["status"],
         "Configuration": row["configuration"], "Type": row["kind"],
         "Created (UTC)": row["created_at"], "Updated (UTC)": row["updated_at"],
@@ -108,6 +110,9 @@ def _details(row):
         st.caption("This older record has no saved status timeline.")
     if row.get("resource_identifiers"):
         st.write(row["resource_identifiers"])
+    if row.get("resource_details"):
+        st.write("**Resource details**")
+        st.json(row["resource_details"])
     from control_plane import enabled
     if enabled() and row['raw_status'] == 'AWAITING_APPROVAL':
         from control_plane_ui import submission
@@ -123,17 +128,23 @@ def _details(row):
 
 
 def render():
+    from dialog_guard import claim_dialog
     st.markdown('''<style>
     div[class*="st-key-successful-destroy-"] button {
         background: #fceaea; color: #af3648; border-color: #f3c4ca;
     }
     </style>''', unsafe_allow_html=True)
-    pending = st.session_state.pop("open-destroy", None)
-    if pending:
+    pending = st.session_state.get("open-destroy")
+    if pending and claim_dialog():
+        st.session_state.pop("open-destroy", None)
         _destroy(pending)
     details = st.session_state.get("destroy-success-details")
-    if details:
+    if details and claim_dialog():
         _destroy_success(details)
+    pending_details = st.session_state.get('history-pending-details')
+    if pending_details and claim_dialog():
+        st.session_state.pop('history-pending-details', None)
+        _details(pending_details)
     st.subheader('Deployment history')
     rows, unreadable = load_history()
     if not rows:
@@ -159,12 +170,19 @@ def render():
         st.session_state['history-page'] = 1
     page = max(1, st.session_state.get('history-page', 1))
     st.caption(f'{len(filtered)} deployments \u00b7 All times IST')
+    try:
+        from provider_connections import list_connections
+        connections = list_connections()
+    except Exception:
+        connections = []
+    for row in filtered:
+        _attach_account_context(row, connections)
     _render_table(filtered[(page-1)*10:page*10], 'history-', 'No deployments match the current filters.')
-    _, previous, indicator, following = st.columns([6, 1, 1.4, 1])
+    previous, indicator, following = st.columns(3)
     if previous.button('Previous', disabled=page <= 1, key='history-previous'):
         st.session_state['history-page'] = page - 1
         st.rerun()
-    indicator.caption(f'Page {page} of {pages}')
+    indicator.markdown(f'<div style="text-align:center;padding:.45rem 0">Page {page} of {pages}</div>', unsafe_allow_html=True)
     if following.button('Next', disabled=page >= pages, key='history-next'):
         st.session_state['history-page'] = page + 1
         st.rerun()
@@ -174,6 +192,37 @@ def filter_records(rows, search='', status='All', provider='All'):
     return [r for r in rows if (status == 'All' or r['status'] == status)
             and (provider == 'All' or r['provider'] == provider)
             and search.casefold() in ' '.join(str(r.get(k, '')) for k in ('name', 'target', 'provider', 'deployment_id', 'customer', 'project')).casefold()]
+
+
+def _attach_account_context(row, connections):
+    provider = row.get('provider')
+    identity_label = {"AWS": "Account", "Azure": "Subscription", "GCP": "Project"}.get(provider, "Identity")
+    identity_id = row.get('target') or 'Unavailable'
+    if provider == 'Azure':
+        identity_id = row.get('subscription') if row.get('subscription') not in (None, '', 'Unavailable') else identity_id
+    elif provider == 'GCP':
+        identity_id = row.get('subscription') if row.get('subscription') not in (None, '', 'Unavailable') else identity_id
+    connection_id = row.get('connection_id')
+    for connection in connections:
+        if connection.get('provider') != provider:
+            continue
+        if connection_id and connection.get('connection_id') != connection_id:
+            continue
+        metadata = connection.get('metadata') or {}
+        actual_id = (connection.get('account_id') or metadata.get('account_id') if provider == 'AWS' else
+                     metadata.get('subscription_id') or connection.get('subscription_id') if provider == 'Azure' else
+                     metadata.get('project_id') or connection.get('project_id'))
+        expected = str(identity_id)
+        if actual_id and str(actual_id) == expected:
+            row['account_name'] = (connection.get('name') or metadata.get('subscription_name') or
+                                   metadata.get('project_name') or 'Name not recorded')
+            row['identity_id'] = expected
+            row['identity_label'] = identity_label
+            return row
+    row['account_name'] = 'Name not recorded'
+    row['identity_id'] = str(identity_id)
+    row['identity_label'] = identity_label
+    return row
 
 
 def ist(value):
@@ -190,14 +239,15 @@ def _render_table(rows, prefix, empty_message):
         st.info(empty_message)
         return
     with st.container(border=True):
-        widths = [0.8, 1.5, 1.4, 2, 1.7, 1.3, 1.1, 1.3]
-        labels = ['CLOUD', 'SUBSCRIPTION / PROJECT', 'ACCOUNT', 'RESOURCE / REGION', 'PROVISIONED DATE', 'PROVISIONED BY', 'STATUS', 'ACTIONS']
+        widths = [0.8, 1.7, 1.4, 2, 1.7, 1.3, 1.1, 1.5]
+        labels = ['CLOUD', 'TARGET IDENTITY', 'IDENTITY NAME', 'RESOURCE / REGION', 'CONFIGURATION DATE', 'PROVISIONED BY', 'STATUS', 'ACTIONS']
         for col, label in zip(st.columns(widths), labels):
             col.caption(label)
         for row in rows:
             cols = st.columns(widths, vertical_alignment='center')
-            for col, field in zip(cols[:3], ['provider', 'subscription', 'target']):
-                col.write(row.get(field, 'Unavailable'))
+            cols[0].write(row.get('provider', 'Unavailable'))
+            cols[1].write(row.get('identity_label', 'Identity') + ' ID: ' + str(row.get('identity_id', row.get('target', 'Unavailable'))))
+            cols[2].write(row.get('account_name', 'Name not recorded'))
             cols[3].write(row['name'])
             cols[3].caption(row.get('configuration', 'Unavailable') + ' \u00b7 ' + row['region'])
             cols[4].write(ist(row['created_at']))
@@ -206,19 +256,30 @@ def _render_table(rows, prefix, empty_message):
             color, bg = colors.get(row['status'], ('#6445bd', '#eee9fb'))
             cols[6].markdown(f'<span style="display:inline-block;border-radius:20px;padding:4px 10px;background:{bg};color:{color};font-size:13px">{escape(row["status"])}</span>', unsafe_allow_html=True)
             with cols[7]:
+                if row['provider'] == 'AWS' and row['raw_status'] in {'SUCCEEDED', 'DESTROYED'}:
+                    reuse_action(row, prefix, 'Reprovision' if row['raw_status'] == 'DESTROYED' else 'Use This Configuration')
+                    if st.button('Details', key=prefix + 'details-' + row['key']):
+                        from dialog_guard import claim_dialog
+                        if claim_dialog():
+                            _details(row)
+                        else:
+                            st.session_state['history-pending-details'] = row
                 if row['provider'] == 'AWS' and row['raw_status'] == 'SUCCEEDED':
-                    reuse_action(row, prefix, 'Reprovision')
                     if st.button('Destroy', key=('' if prefix == 'history-' else prefix) + 'successful-destroy-' + row['key']):
                         st.session_state['open-destroy'] = row
                         st.session_state['requested-page'] = 'Deployment'
                         st.rerun()
-                elif st.button('Details', key=prefix + 'details-' + row['key']):
-                    _details(row)
+                elif not (row['provider'] == 'AWS' and row['raw_status'] in {'SUCCEEDED', 'DESTROYED'}) and st.button('Details', key=prefix + 'details-' + row['key']):
+                    from dialog_guard import claim_dialog
+                    if claim_dialog():
+                        _details(row)
+                    else:
+                        st.session_state['history-pending-details'] = row
             st.divider()
 
 
-def reuse_action(row, prefix='', label='Reuse'):
-    if row['raw_status'] != 'SUCCEEDED':
+def reuse_action(row, prefix='', label='Use This Configuration'):
+    if row['raw_status'] not in {'SUCCEEDED', 'DESTROYED'}:
         return
     from reuse_artifacts import availability
     reason = availability(row)

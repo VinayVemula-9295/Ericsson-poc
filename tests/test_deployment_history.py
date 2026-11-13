@@ -56,6 +56,18 @@ def test_missing_history_is_read_only(tmp_path):
     assert not root.exists()
 
 
+def test_deployment_account_name_requires_matching_provider_identity():
+    from deployment_history_ui import _attach_account_context
+    connections = [
+        {"provider": "AWS", "connection_id": "demo", "name": "Demo Account", "account_id": "333347372766", "metadata": {}},
+        {"provider": "AWS", "connection_id": "test", "name": "Test Account", "account_id": "695729002971", "metadata": {}},
+    ]
+    row = {"provider": "AWS", "connection_id": "test", "target": "695729002971", "subscription": "Unavailable"}
+    assert _attach_account_context(row, connections)["account_name"] == "Test Account"
+    wrong = {"provider": "AWS", "connection_id": "test", "target": "333347372766", "subscription": "Unavailable"}
+    assert _attach_account_context(wrong, connections)["account_name"] == "Name not recorded"
+
+
 def test_saved_sizing_prefers_selected_specs_and_labels_legacy_requirements(tmp_path):
     save(tmp_path, 'poc_plans', 'sized', dict(deployment_id='sized', status='SUCCEEDED',
         candidate=dict(vcpus=2, memory_gib=1), requirements=dict(min_vcpus=1, min_memory_gib=.5)))
@@ -104,8 +116,9 @@ def test_success_table_filters_statuses_and_has_unique_details(monkeypatch, tmp_
         })
     page = AppTest.from_string("from deployment_history_ui import render\nrender()").run()
     assert not page.exception
-    assert sum(b.label == 'Details' for b in page.button) == 3
+    assert sum(b.label == 'Details' for b in page.button) == 4
     assert sum(b.label == 'Reprovision' for b in page.button) == 1
+    assert sum(b.label == 'Use This Configuration' for b in page.button) == 1
     keys = [button.key for button in page.button]
     assert len(keys) == len(set(keys))
     page.selectbox(key='history-status').select_index(0).run()

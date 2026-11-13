@@ -82,9 +82,6 @@ def require_demo_login(*, browser_restore=True):
     st.markdown('<style>[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"]{display:none}</style>', unsafe_allow_html=True)
     with st.container(border=True, key='admin-login'):
         brand()
-        st.caption('CLOUD OPERATIONS WORKSPACE')
-        st.subheader('Welcome back')
-        st.write('Sign in to manage your cloud estate and review infrastructure changes.')
         if not app_auth.configured():
             st.info('Administrator access has not been configured. Run tools/setup_admin.py and load the generated environment file before starting the platform.')
         with st.form('admin-login-form', clear_on_submit=True):

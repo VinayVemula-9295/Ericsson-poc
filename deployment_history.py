@@ -104,7 +104,9 @@ def load_history(data_dir: Path | None = None) -> tuple[list[dict], int]:
                     'customer': ownership.get('customer', 'Unassigned'),
                     'project': ownership.get('project', 'Unassigned'),
                     "source": folder,
+                    "connection_id": record.get('connection_id') or record.get('aws_connection_id') or config.get('aws_connection_id'),
                     "resource_identifiers": record.get("resource_identifiers", []),
+                    "resource_details": record.get("resource_details") if isinstance(record.get("resource_details"), dict) else {},
                     "key": folder + ":" + path.parent.name,
                     "deployment_id": str(record["deployment_id"]),
                     "name": str(name or record["deployment_id"]),
@@ -180,4 +182,4 @@ def load_reusable_history():
     """Backend listing exposes only authorized, successful, integrity-verified sources."""
     from reuse_artifacts import availability
     rows, unreadable = load_history()
-    return [row for row in rows if row['raw_status'] == 'SUCCEEDED' and availability(row) is None], unreadable
+    return [row for row in rows if row['raw_status'] in {'SUCCEEDED', 'DESTROYED'} and availability(row) is None], unreadable

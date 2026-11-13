@@ -39,6 +39,7 @@ def configuration_details(row):
 
 
 def render():
+    from dialog_guard import claim_dialog
     if st.session_state.pop('reuse-reset-pending', False):
         for key in ('reuse-source', 'reuse-draft', 'reuse-loaded', 'poc-selected', 'poc-result',
                     'poc-saved-plan', 'poc-open-approval', 'poc-open-plan', 'poc-open-success',
@@ -52,16 +53,16 @@ def render():
         for key in ('poc-prompt', 'poc-prompt-preset', 'poc-form-version', 'tf-live-inputs', 'tf-live-key'):
             st.session_state.pop(key, None)
         st.session_state['provisioning-mode'] = 'Use Saved Configuration'
-    st.caption('Reuse saved Terraform to create a separate deployment. Review a fresh plan before applying.')
+    st.caption('Use an existing server configuration to create a separate deployment. Review a fresh plan before applying.')
     rows, unreadable = load_reusable_history()
-    rows = [r for r in rows if r['raw_status'] == 'SUCCEEDED']
+    rows = [r for r in rows if r['raw_status'] in {'SUCCEEDED', 'DESTROYED'}]
     if unreadable:
         st.warning(f'{unreadable} saved records could not be read.')
     if not rows:
         st.caption('0 successful deployments found')
-        st.info('No verified successful deployments are available for reuse. Complete a deployment first.')
+        st.info('No verified saved configurations are available. Complete a deployment or retain an intact destroyed configuration first.')
         return
-    search = st.text_input('Search deployments', placeholder='Resource, deployment ID or account', key='reuse-search')
+    search = st.text_input('Search configurations', placeholder='Resource or account', key='reuse-search')
     with st.expander('Advanced search'):
         a, b, c = st.columns(3)
         provider = a.selectbox('Cloud provider', ['All', 'AWS', 'Azure', 'GCP'], key='reuse-cloud')
@@ -96,7 +97,7 @@ def render():
         st.info('No deployments match your search.')
     else:
         headers = st.columns([2, 2, 2, 2, 1, 1])
-        for column, label in zip(headers, ['Cloud / Account', 'Resource / Region', 'Previous configuration', 'Configuration details', 'Details', 'Reuse']):
+        for column, label in zip(headers, ['Cloud / Account', 'Resource / Region', 'Existing configuration', 'Configuration details', 'Details', 'Action']):
             column.markdown('**' + label + '**')
     for row in filtered:
         with st.container(border=True):
@@ -106,12 +107,19 @@ def render():
             config.write(row['configuration'])
             sizing.write(row.get('configuration_details', 'Sizing unavailable'))
             if details.button('Details', key='reuse-details-' + row['key']):
-                configuration_details(row)
+                if claim_dialog():
+                    configuration_details(row)
+                else:
+                    st.session_state['reuse-pending-details'] = row
             with action:
                 reason = availability(row)
                 if reason:
                     st.caption(reason)
-                reuse_action(row, 'agent-')
+                reuse_action(row, 'agent-', 'Reprovision' if row['raw_status'] == 'DESTROYED' else 'Use This Configuration')
+    pending_details = st.session_state.get('reuse-pending-details')
+    if pending_details and claim_dialog():
+        st.session_state.pop('reuse-pending-details', None)
+        configuration_details(pending_details)
     source = st.session_state.get('reuse-source')
     if not source:
         return
@@ -129,7 +137,7 @@ def render():
         regions = [r['value'] for r in catalogue['regions']]
         region = st.selectbox('Deployment region', regions, index=regions.index(candidate['region']) if candidate['region'] in regions else 0, key='reuse-target-region-' + source[1])
         candidate['region'] = region
-        st.subheader('Reuse ' + record.get('resource_name', source[1]))
+        st.subheader('Use Existing Server Config to Provision New')
         st.caption('Review the previous configuration and edit the supported inputs. Submit prepares a fresh plan for approval.')
         if candidate['provider'] != 'AWS':
             st.info('Saved script execution is currently available for AWS only.')
@@ -188,9 +196,13 @@ def plan_controls(candidate, request, inputs, source):
     if record['status'] == 'AWAITING_APPROVAL':
         if st.button('Review Terraform plan'):
             st.session_state['poc-open-plan'] = True
-        if st.button('Terraform apply') or st.session_state.get('poc-open-approval'):
-            approval_dialog(record['deployment_id'], payload_hash)
-    if st.session_state.pop('poc-open-plan', False):
+        if st.button('Terraform apply'):
+            st.session_state['poc-open-approval'] = True
+    if record.get('status') == 'AWAITING_APPROVAL' and st.session_state.get('poc-open-approval') and claim_dialog():
+        approval_dialog(record['deployment_id'], payload_hash)
+    if st.session_state.get('poc-open-plan') and claim_dialog():
+        st.session_state.pop('poc-open-plan', None)
         plan_dialog(record)
-    elif st.session_state.pop('poc-open-success', False):
+    elif st.session_state.get('poc-open-success') and claim_dialog():
+        st.session_state.pop('poc-open-success', None)
         success_dialog(record)

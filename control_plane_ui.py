@@ -39,6 +39,13 @@ def login():
 
 
 def submission(source, deployment_id):
+    try:
+        record, _, _, _ = cp.artifact(source, deployment_id)
+        from cost_summary import render as render_cost_summary
+        render_cost_summary(record)
+    except (ValueError, OSError):
+        st.warning('The saved cost and target summary could not be retrieved. Refresh the plan before submitting it.')
+        return
     st.caption('Submit the reviewed plan for approval. A different authorized user must approve it.')
     mode = st.radio('Execution', ['Immediately after approval', 'Scheduled'], key='cp-execution-' + deployment_id)
     due = None
@@ -47,7 +54,8 @@ def submission(source, deployment_id):
         time = st.time_input('Execution time (UTC)', key='cp-time-' + deployment_id)
         due = datetime.combine(date, time, tzinfo=timezone.utc)
     st.caption('Plans remain subject to expiry: Agent plans 1 hour; legacy AWS plans 4 hours. Later execution requires a fresh plan and approval.')
-    if st.button('Submit for approval', key='cp-submit-' + deployment_id):
+    reviewed_cost = st.checkbox('I reviewed the target and estimated cost shown above (including any unavailable pricing notice).', key='cp-cost-reviewed-' + deployment_id)
+    if st.button('Submit for approval', key='cp-submit-' + deployment_id, disabled=not reviewed_cost):
         try:
             request_id = cp.submit(source, deployment_id, due)
             st.success('Request submitted: ' + request_id)
@@ -74,12 +82,12 @@ def render():
         try:
             record, _, _, _ = cp.artifact(selected['source'], selected['deployment_id'])
             st.code(record.get('plan_summary', 'Plan summary unavailable'))
-            st.write({'Target': record.get('target_identity') or record.get('target_account_id'),
-                      'Configuration': record.get('candidate') or record.get('requested_configuration')})
+            from cost_summary import render as render_cost_summary
+            render_cost_summary(record)
         except (ValueError, OSError):
             st.warning('Saved plan is unavailable or changed. Reject and request a fresh plan.')
         note = st.text_input('Decision comment')
-        ack = st.checkbox('I reviewed this exact plan, target and execution time')
+        ack = st.checkbox('I reviewed this exact plan, target, execution time and estimated cost')
         approve, reject = st.columns(2)
         for button, decision in ((approve, True), (reject, False)):
             if button.button('Approve' if decision else 'Reject', disabled=decision and not ack):

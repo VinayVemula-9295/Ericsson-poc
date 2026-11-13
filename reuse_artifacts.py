@@ -7,7 +7,7 @@ from pathlib import Path
 
 STORES = {'poc_plans': ('poc-[0-9a-f]{32}', 'record.json'),
           'terraform_deployments': ('cp-[0-9a-f]{16}', 'deployment.json')}
-TERMINAL = {'SUCCEEDED'}
+TERMINAL = {'SUCCEEDED', 'DESTROYED'}
 
 
 def digest(path):
@@ -35,7 +35,7 @@ def load(source, deployment_id):
         raise ValueError('Invalid deployment directory')
     record = json.loads((directory / STORES[source][1]).read_text(encoding='utf-8'))
     if record.get('status') not in TERMINAL:
-        raise ValueError('Only completed successful deployments can be reused')
+        raise ValueError('Only completed successful or destroyed deployments with intact saved configuration can be reused')
     from control_plane import visible_connection
     config = record.get('requested_configuration') or {}
     connection_id = record.get('connection_id') or record.get('aws_connection_id') or config.get('aws_connection_id')

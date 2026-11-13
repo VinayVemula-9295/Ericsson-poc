@@ -17,6 +17,7 @@ RUN apt-get update \
     && terraform -version
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN python -c "import tornado.httpclient, tornado.httpserver, tornado.ioloop, tornado.web, tornado.websocket"
 COPY . .
 EXPOSE 8501
 CMD ["python", "runtime_entrypoint.py"]

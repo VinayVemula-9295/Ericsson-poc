@@ -12,7 +12,7 @@ html,body,[data-testid="stApp"]{font-family:"Segoe UI",Arial,sans-serif;font-siz
 [class*="st-key-summary-"] [data-testid="stMetricLabel"]{min-height:44px;align-items:flex-start}
 [class*="st-key-summary-"]{min-height:360px}
 [data-testid="stElementContainer"]:has(.header-brand){width:100%}
-.header-brand{display:flex;align-items:center;gap:20px;min-height:76px;margin-bottom:24px}
+.header-brand{display:flex;align-items:center;gap:8px;min-height:76px;margin-bottom:24px}
 .header-brand img{width:150px;height:auto;object-fit:contain}
 .header-brand span{font-size:22px;font-weight:650;line-height:1.3;color:var(--platform-ink)}
 h1{font-size:28px!important}h2,h3{font-size:24px!important}h4{font-size:18px!important}
@@ -24,8 +24,9 @@ h1{font-size:28px!important}h2,h3{font-size:24px!important}h4{font-size:18px!imp
 [data-testid="stSidebar"] [role="radiogroup"]{gap:12px}
 [data-testid="stSidebar"] [role="radiogroup"] label{padding:14px 18px;border-radius:12px}
 .st-key-demo-login{margin-top:9vh;padding:32px!important}
-.st-key-demo-login .header-brand{flex-direction:column;align-items:flex-start;gap:24px}
-[data-testid="stDialog"] [role="dialog"]{border-radius:16px}
+.st-key-demo-login .header-brand{flex-direction:column;align-items:flex-start;gap:10px}
+[data-testid="stDialog"] [role="dialog"]{border-radius:16px;max-height:calc(100dvh - 2rem);overflow:auto;box-sizing:border-box}
+[data-testid="stDialog"] h1,[data-testid="stDialog"] h2,[data-testid="stDialog"] h3{text-align:center}
 [data-testid="stTextInput"] input,[data-testid="stSelectbox"] [data-baseweb="select"]{min-height:44px}
 .st-key-recent-provisioning{margin-top:24px}
 @media(max-width:900px){.header-brand{gap:12px;flex-wrap:wrap}.header-brand span{font-size:18px}.header-brand img{width:120px}}
@@ -75,7 +76,7 @@ button:focus-visible{outline:3px solid #b29ce8;outline-offset:3px}
 .st-key-platform-header{position:fixed;top:0;width:100cqw;min-height:88px;box-sizing:border-box;background:#fff;border:1px solid var(--platform-line);border-top:0;border-radius:0 0 14px 14px;padding:12px 20px;box-shadow:0 4px 18px #20305008}
 body:has(.st-key-platform-header) [data-testid="stToolbar"]{position:fixed;top:88px;right:16px;width:auto;height:auto;background:#f6f8fb;border-radius:0 0 8px 8px;padding:2px 8px;z-index:101}
 [data-testid="stAppDeployButton"]{display:none}
-.st-key-platform-header .header-brand{min-height:56px;margin:0;flex-wrap:nowrap}
+.st-key-platform-header .header-brand{min-height:56px;margin:0;flex-wrap:nowrap;gap:8px}
 .st-key-platform-header .header-brand img{width:132px}
 .st-key-platform-header .header-brand span{font-size:20px}
 .st-key-header-profile button{border-radius:10px}
@@ -92,7 +93,7 @@ body:has(.st-key-platform-header) [data-testid="stToolbar"]{position:fixed;top:8
 .st-key-hierarchy-details{min-width:0}
 .st-key-organization-costs [data-testid="stMetricValue"]{font-size:24px}
 .st-key-admin-login{width:min(560px,100%)!important;margin:6vh auto!important;padding:30px!important;background:white;border:1px solid var(--platform-line);border-radius:18px}
-.st-key-admin-login .header-brand{flex-direction:column;align-items:flex-start;gap:20px}
+.st-key-admin-login .header-brand{flex-direction:column;align-items:flex-start;gap:10px}
 .st-key-agent-workspace{max-width:1120px;margin-inline:auto;padding-block:clamp(16px,3vh,36px)}
 .st-key-agent-conversation{width:100%;margin-inline:auto}
 [data-testid="stSidebarUserContent"]{justify-content:flex-start}

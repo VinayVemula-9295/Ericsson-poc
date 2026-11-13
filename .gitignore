@@ -26,6 +26,7 @@ dist/
 .env.*
 !.env.example
 !.env.sample
+.iipp/
 .streamlit/secrets.toml
 .aws/
 *.pem

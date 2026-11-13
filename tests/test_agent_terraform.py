@@ -45,6 +45,22 @@ def test_resource_outputs_exclude_secrets_and_complex_values():
     }) == {"instance_id": "i-example", "public_ip": ""}
 
 
+def test_plan_surfaces_authorization_line_without_encoded_failure_payload():
+    from poc_planner import _authorization_diagnostic
+    result = _authorization_diagnostic(
+        "Error: operation error EC2: RunInstances, api error UnauthorizedOperation: "
+        "not authorized to perform: ec2:RunInstances. Encoded authorization failure message: SECRET_BLOB"
+    )
+    assert result is not None
+    assert "ec2:RunInstances" in result
+    assert "SECRET_BLOB" not in result
+
+
+def test_plan_authorization_diagnostic_ignores_non_auth_errors():
+    from poc_planner import _authorization_diagnostic
+    assert _authorization_diagnostic("Terraform provider initialization failed") is None
+
+
 @pytest.mark.parametrize("outcome", ["success", "nonzero", "exception"])
 def test_apply_history_persists_progress_and_terminal_status(runner, monkeypatch, outcome):
     from deployment_history import load_history

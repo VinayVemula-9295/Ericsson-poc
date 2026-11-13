@@ -122,14 +122,52 @@ if sudo docker inspect "$OLD_CONTAINER" >/dev/null 2>&1; then
 fi
 
 restore_previous() {
-  echo "Deployment failed. Restoring the previous container..." >&2
-  sudo docker rm -f "$OLD_CONTAINER" >/dev/null 2>&1 || true
+  echo "Deployment failed. Preserving the failed candidate and restoring the previous container..." >&2
+  if sudo docker inspect "$OLD_CONTAINER" >/dev/null 2>&1; then
+    local failed_name suffix
+    failed_name="${OLD_CONTAINER}-failed-${BACKUP_STAMP}"
+    suffix=0
+    while sudo docker inspect "$failed_name" >/dev/null 2>&1; do
+      suffix=$((suffix + 1))
+      failed_name="${OLD_CONTAINER}-failed-${BACKUP_STAMP}-${suffix}"
+    done
+    sudo docker stop --time 20 "$OLD_CONTAINER" >/dev/null 2>&1 || true
+    if sudo docker rename "$OLD_CONTAINER" "$failed_name"; then
+      echo "Failed candidate retained as: $failed_name" >&2
+    else
+      echo "Could not retain the failed candidate; removing it to restore the previous service." >&2
+      sudo docker rm -f "$OLD_CONTAINER" >/dev/null 2>&1 || true
+    fi
+  fi
   if sudo docker inspect "$PREVIOUS_CONTAINER" >/dev/null 2>&1; then
-    sudo docker rename "$PREVIOUS_CONTAINER" "$OLD_CONTAINER" || true
-    sudo docker start "$OLD_CONTAINER" >/dev/null 2>&1 || true
-    sudo docker logs --tail 60 "$OLD_CONTAINER" >&2 || true
+    if ! sudo docker rename "$PREVIOUS_CONTAINER" "$OLD_CONTAINER"; then
+      echo "Failed to restore the previous container name: $PREVIOUS_CONTAINER" >&2
+      return 1
+    fi
+    if ! sudo docker start "$OLD_CONTAINER" >/dev/null; then
+      echo "Failed to start the previous container: $OLD_CONTAINER" >&2
+      return 1
+    fi
+    local restored=0
+    for _ in $(seq 1 45); do
+      if sudo docker inspect -f '{{.State.Running}}' "$OLD_CONTAINER" 2>/dev/null | grep -q true \
+        && sudo docker exec "$OLD_CONTAINER" python -c \
+          'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8501/_stcore/health", timeout=2).read()' \
+          >/dev/null 2>&1; then
+        restored=1
+        break
+      fi
+      sleep 2
+    done
+    if [ "$restored" -eq 1 ]; then
+      echo "Previous container restored and passed the Streamlit health check." >&2
+    else
+      echo "Previous container was started but did not pass the Streamlit health check." >&2
+      return 1
+    fi
   else
     echo "No previous container was retained. Backup files are at $BACKUP_DIR" >&2
+    return 1
   fi
 }
 
@@ -204,8 +242,7 @@ for _ in $(seq 1 45); do
 done
 
 if [ "$healthy" -ne 1 ]; then
-  echo "New container failed its Streamlit health check. Recent logs:" >&2
-  sudo docker logs --tail 120 "$OLD_CONTAINER" >&2 || true
+  echo "New container failed its Streamlit health check." >&2
   restore_previous
   exit 1
 fi

@@ -1514,9 +1514,11 @@ def render_deployments(*, embedded: bool = False, suggested_instance_type: str |
             if record.get("status") == "AWAITING_APPROVAL":
                 st.markdown("**Saved plan summary — review before approving**")
                 st.code(record.get("plan_summary", "No plan summary."))
+                from cost_summary import render as render_cost_summary
+                render_cost_summary(record)
                 reviewer = st.text_input("Reviewer name", key=f"tf-reviewer-{did}")
                 token = st.text_input("Reviewer approval token", type="password", key=f"tf-token-{did}")
-                ack = st.checkbox("I have reviewed and approve the Terraform changes.", key=f"tf-ack-{did}")
+                ack = st.checkbox("I reviewed this exact plan and the estimated cost, including any unavailable pricing notice.", key=f"tf-ack-{did}")
                 if st.button("Approve and apply saved Terraform plan", key=f"tf-apply-{did}", type="primary", disabled=not (enabled and reviewer.strip() and token and ack)):
                     expected = _approval_token()
                     if not expected or not hmac.compare_digest(token, expected):
@@ -1635,9 +1637,13 @@ from control_plane import enabled as governed_control_plane
 if governed_control_plane():
     from control_plane_ui import context_selector
     context_selector()
-if st.session_state.pop('iipp_open_provider_config_dialog', False):
+from dialog_guard import begin_render, claim_dialog
+begin_render()
+if st.session_state.get('iipp_open_provider_config_dialog') and claim_dialog():
+    st.session_state.pop('iipp_open_provider_config_dialog', None)
     _show_provider_config_dialog()
-if st.session_state.pop('iipp_open_connection_success_dialog', False):
+elif st.session_state.get('iipp_open_connection_success_dialog') and claim_dialog():
+    st.session_state.pop('iipp_open_connection_success_dialog', None)
     _show_connection_success_dialog()
 if st.session_state.get('operational-screen'):
     if st.button('Back to dashboard', key='close-workload-telemetry'):

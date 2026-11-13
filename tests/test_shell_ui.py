@@ -23,6 +23,9 @@ st.write('Workspace loaded')
 ''').run()
     assert not page.exception
     assert not any(x.value == 'Workspace loaded' for x in page.markdown)
+    login_copy = '\n'.join(x.value for x in list(page.markdown) + list(page.caption))
+    assert 'CLOUD OPERATIONS WORKSPACE' not in login_copy
+    assert 'Sign in to manage your cloud estate and review infrastructure changes.' not in login_copy
     page.text_input[0].input('admin')
     page.text_input[1].input(password)
     page.button[0].click().run()
@@ -36,7 +39,7 @@ st.write('Workspace loaded')
     assert 'poc-saved-plan' not in page.session_state
 
 
-@pytest.mark.parametrize('status', ['FAILED', 'DESTROYED', 'APPLYING', 'AWAITING_APPROVAL', 'REJECTED'])
+@pytest.mark.parametrize('status', ['FAILED', 'APPLYING', 'AWAITING_APPROVAL', 'REJECTED'])
 def test_unsuccessful_saved_configuration_cannot_bypass_reuse_filter(tmp_path, monkeypatch, status):
     import json
     from deployment_history import load_reuse

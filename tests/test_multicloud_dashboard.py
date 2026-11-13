@@ -234,6 +234,42 @@ def test_ui_select_and_detail(connection, monkeypatch):
     assert page.dataframe[0].value.iloc[0]['Account ID'] == '123'
 
 
+def test_account_dialog_waits_until_global_dialog_closes(connection, monkeypatch):
+    import hierarchy_ui
+    from types import SimpleNamespace
+    snapshot = dict(connections=[connection], nodes=[dict(id='123', name='Live account', type='account',
+                    parent_id=None, uid='unique', metadata={}, connection_ids=['c'])],
+                    costs=[], errors=[], totals={}, partial_cost=False)
+    monkeypatch.setattr(hierarchy_ui, 'provider_snapshot', lambda provider, **_: snapshot if provider == 'AWS' else
+                        dict(connections=[], nodes=[], costs=[], errors=[], totals={}, partial_cost=False))
+    original_dataframe = hierarchy_ui.st.dataframe
+    def selected_dataframe(data, **kwargs):
+        if kwargs.get('key') == 'AWS-account-table':
+            return SimpleNamespace(selection=SimpleNamespace(rows=[0]))
+        return original_dataframe(data, **kwargs)
+    monkeypatch.setattr(hierarchy_ui.st, 'dataframe', selected_dataframe)
+    opened = []
+    monkeypatch.setattr(hierarchy_ui, 'account_dialog', lambda *args: opened.append(args))
+    page = AppTest.from_string('from hierarchy_ui import render\nrender([])', default_timeout=15)
+    page.session_state['overview-details-provider'] = 'AWS'
+    page.session_state['iipp-dialog-opened-this-run'] = True
+    page.run()
+    assert not page.exception
+    assert opened == []
+    assert page.session_state['iipp-pending-account-dialog']['account_id'] == '123'
+    page.session_state['iipp-dialog-opened-this-run'] = False
+    page.run()
+    assert not page.exception
+    assert len(opened) == 1
+    assert opened[0][1]['id'] == '123'
+    page.session_state['iipp-dialog-opened-this-run'] = True
+    page.run()
+    assert len(opened) == 1
+    page.session_state['iipp-dialog-opened-this-run'] = False
+    page.run()
+    assert len(opened) == 2
+
+
 def test_worker_carries_authenticated_principal(connection, monkeypatch):
     import control_plane as cp
     monkeypatch.setattr(cp, 'enabled', lambda: True)

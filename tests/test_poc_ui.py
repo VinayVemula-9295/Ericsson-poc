@@ -103,18 +103,34 @@ def test_aws_card_planning_follows_explicit_family_policy(page, monkeypatch, kin
 def test_prompt_is_clean_and_sends_directly_to_three_cloud_choices(page):
     ui, calls = page
     assert calls == []
-    assert ui.text_area(key="poc-prompt").placeholder == "Describe your infrastructure requirements"
+    assert ui.text_area(key="poc-prompt").placeholder == "Example: I need 2 vCPU and 1 GiB RAM Linux server"
     assert not ui.toggle
     send(ui, "4 vCPU 16 GiB RAM Windows server")
     assert len(calls) == 3
     assert ui.session_state["poc-result"][0]["kind"] == "VM"
     assert ui.session_state["poc-result"][0]["os"] == "Windows"
-    assert [t.label for t in ui.tabs] == ["AWS", "Azure", "GCP"]
-    assert len([b for b in ui.button if b.label == "Use Configuration"]) == 9
+    assert not ui.tabs
+    assert all(any(item.value == f"### {provider}" for item in ui.markdown) for provider in ("AWS", "Azure", "GCP"))
+    assert len([b for b in ui.button if b.label == "Use This Configuration"]) == 9
     assert not any(b.label == "Select Configuration" for b in ui.button)
     assert any("**Recommendation:" in m.value for m in ui.markdown)
     assert not ui.dataframe
     assert not any(b.label in {"Explain verified evidence", "Research official documentation"} for b in ui.button)
+
+
+def test_missing_azure_gcp_evidence_uses_nonselectable_illustrative_cards(page, monkeypatch):
+    import agent_flow_ui as flow
+    ui, _ = page
+    def no_options(*args):
+        return []
+    no_options.clear = lambda: None
+    monkeypatch.setattr(flow, "catalogue_options", no_options)
+    send(ui, "Linux server 2 vCPU 4 GiB RAM")
+    assert sum("Illustrative only · not live-verified" in item.value for item in ui.warning) == 6
+    sample_buttons = [button for button in ui.button if button.label == "Use This Configuration"]
+    assert len(sample_buttons) == 6
+    assert all(button.disabled for button in sample_buttons)
+    assert "poc-selected" not in ui.session_state
 
 
 def test_prompt_preset_fills_editable_text_without_evaluating(page):
@@ -125,6 +141,27 @@ def test_prompt_preset_fills_editable_text_without_evaluating(page):
     assert ui.text_area(key='poc-prompt').value == prompt
     assert calls == []
     assert 'poc-result' not in ui.session_state
+
+
+def test_selecting_configuration_highlights_it_and_opens_configuration_inputs(page):
+    ui, _ = page
+    send(ui, "Linux server 2 vCPU 1 GiB RAM")
+    use(ui, "use-AWS-ASK")
+    assert not ui.exception
+    assert ui.session_state["poc-selected"]["provider"] == "AWS"
+    assert any(item.value == "Infrastructure Configuration Inputs" for item in ui.subheader)
+
+
+def test_windows_prompt_is_placeholder_and_selectable_preset(page):
+    ui, calls = page
+    preset = "Need a Windows VM with 2 vCPU and 4 GiB RAM"
+    selector = ui.selectbox(key="poc-prompt-preset")
+    assert selector.placeholder == preset
+    assert preset in selector.options
+    selector.select(preset).run(timeout=20)
+    assert ui.text_area(key="poc-prompt").value == preset
+    assert calls == []
+    assert "poc-result" not in ui.session_state
 
 
 def test_server_os_between_memory_and_server_keeps_requested_memory(page):
@@ -174,7 +211,7 @@ def test_new_requests_and_context_changes_clear_old_plans(page):
     assert not ui.exception
     assert "poc-result" not in ui.session_state
     assert not ui.text_input
-    assert [s.label for s in ui.selectbox][-3:] == ["AWS region", "Azure region", "GCP region"]
+    assert {"AWS Region", "Azure Region", "GCP Region"}.issubset({s.label for s in ui.selectbox})
 
 
 def test_plan_dialog_approval_and_edits_invalidate_plan(page, monkeypatch):
@@ -240,7 +277,7 @@ def test_edit_button_preserves_inputs_and_regenerates_plan(page, monkeypatch, ki
         assert all(row["cluster"]["node_count"] == 2 for row in ui.session_state["poc-result"][2])
     use(ui, "use-AWS-ASK")
     for field in ui.text_input:
-        if field.label not in {"AWS region", "Azure region", "GCP region"}:
+        if field.label not in {"AWS Region", "Azure Region", "GCP Region"}:
             field.input("test-original")
     draft(ui)
     ui.button(key="generate-terraform-plan").click().run(timeout=20)
@@ -278,7 +315,7 @@ def test_requested_copy_and_controls_are_removed(page, prompt):
     assert not ui.exception
     assert "Deployment environment" not in [s.label for s in ui.selectbox]
     assert "Resource TTL (days)" not in [n.label for n in ui.number_input]
-    assert any('Please fill in the required Terraform input fields to generate your infrastructure configuration' in item.value for item in ui.info)
+    assert any('Fill in the form below to generate your infrastructure configuration.' in item.value for item in ui.info)
     assert "Refresh live values" not in [b.label for b in ui.button]
     assert "Required AWS roles and permissions" not in [e.label for e in ui.expander]
     assert "Advanced deployment settings" not in [e.label for e in ui.expander]
@@ -326,7 +363,7 @@ def test_failed_discovery_replaces_old_choices_and_plan(page, monkeypatch):
     assert "poc-saved-plan" not in ui.session_state
     assert ui.session_state["poc-result"][0]["min_vcpus"] == 4
     assert len(ui.session_state["poc-result"][3]) == 3
-    assert not any(b.label == "Use Configuration" for b in ui.button)
+    assert not any(b.label == "Use This Configuration" and not b.disabled for b in ui.button)
 
 
 def test_one_undersized_kubernetes_candidate_does_not_drop_other_workers(page, monkeypatch):
@@ -363,7 +400,9 @@ def test_live_aws_catalogue_keeps_new_families_and_unavailable_evidence(monkeypa
 def test_advanced_options_only_have_provider_regions(page):
     ui, _ = page
     assert not ui.text_input
-    assert [s.label for s in ui.selectbox][-3:] == ["AWS region", "Azure region", "GCP region"]
+    assert {"AWS Region", "Azure Region", "GCP Region"}.issubset({s.label for s in ui.selectbox})
+    assert not any(s.label in {"AWS Region", "Azure Region", "GCP Region"} for s in ui.radio)
+    assert any(item.value == "### Select Region" for item in ui.markdown)
     assert not ui.number_input
     assert not ui.checkbox
     assert not any("connection" in s.label.lower() for s in ui.selectbox)
@@ -508,10 +547,10 @@ def use(ui, key):
 
 def draft(ui):
     ui.text_input(key='provisioning-initiator').input('Test initiator').run(timeout=20)
-    next(b for b in ui.button if b.label == 'Generate Terraform IaC').click().run(timeout=20)
+    next(b for b in ui.button if b.label == 'Configure / Terraform Plan').click().run(timeout=20)
     assert not any(b.key == 'generate-terraform-plan' for b in ui.button)
     next(b for b in ui.button if b.label == 'Validate Configuration').click().run(timeout=20)
-    assert any(item.value == 'Terraform code has been validated successfully.' for item in ui.success)
+    assert any(item.value == 'Terraform configuration has been validated successfully.' for item in ui.success)
 
 
 def test_highlighted_editor_edits_invalidate_saved_plan(page, monkeypatch):
@@ -551,7 +590,7 @@ def test_failed_revalidation_hides_generate_and_clears_approval(page, monkeypatc
     for field in ui.text_input:
         field.input('example-value')
     draft(ui)
-    assert ui.button(key='generate-terraform-plan').label == 'Generate Terraform'
+    assert ui.button(key='generate-terraform-plan').label == 'Generate Terraform Plan'
     ui.session_state['poc-saved-plan'] = dict(deployment_id='old-plan')
     ui.session_state['poc-open-approval'] = True
     def fail(*args):

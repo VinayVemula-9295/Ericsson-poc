@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -138,6 +139,20 @@ def _runtime(candidate, request, inputs, conn, tf):
             raise ValueError("Unsupported provider")
     return env
 
+
+def _authorization_diagnostic(output: str) -> str | None:
+    """Return only explicit provider authorization lines; never expose full runner output."""
+    for line in (output or "").splitlines():
+        clean = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+        lowered = clean.lower()
+        if not any(token in lowered for token in (
+                "accessdenied", "unauthorizedoperation", "not authorized to perform",
+                "no identity-based policy allows", "explicit deny")):
+            continue
+        clean = re.sub(r"(?i)encoded authorization failure message:\s*\S+", "encoded authorization detail redacted", clean)
+        return clean[:500]
+    return None
+
 def prepare(candidate: dict, request: dict, inputs: dict, latency: list[dict] = (), *, reuse_from=None) -> dict:
     from control_plane import authorize_connection
     actor = authorize_connection(candidate.get('connection_id'))
@@ -237,9 +252,15 @@ def prepare(candidate: dict, request: dict, inputs: dict, latency: list[dict] = 
         event("PLAN_STARTED", deployment_id=deployment_id, provider=provider, region=candidate["region"], sku=candidate["sku"])
         backend = _backend(record, readonly=bool(bundle))
         for args in (backend, ["terraform", "validate", "-no-color"], ["terraform", "plan", "-input=false", "-no-color", "-out=tfplan"]):
-            code, _ = (tf._run_init if args[1] == "init" else tf._run)(args, directory, 300, extra_env=env)
+            code, output = (tf._run_init if args[1] == "init" else tf._run)(args, directory, 300, extra_env=env)
             if code:
-                raise ValueError("Terraform " + args[1] + " failed; inspect protected runner diagnostics")
+                auth_error = _authorization_diagnostic(output)
+                message = "Terraform " + args[1] + " failed"
+                if auth_error:
+                    message += ". AWS authorization response: " + auth_error
+                else:
+                    message += "; inspect protected runner diagnostics"
+                raise ValueError(message)
         code, summary = tf._run(["terraform", "show", "-no-color", "tfplan"], directory, 120, extra_env=env)
         if code:
             raise ValueError("Terraform show failed")
