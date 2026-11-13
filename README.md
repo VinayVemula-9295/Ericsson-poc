@@ -69,7 +69,7 @@ The Agent now uses the selected **Agent Workspace (option 04)** design: a reques
 - A one-shot modal Configure dialog with an explicit Close control and a separate one-shot connection-verified success dialog; ordinary page interactions do not reopen either dialog. AWS External IDs are validated before STS calls.
 - AWS, Azure and Google Cloud account connection forms; credentials are stored in AWS Secrets Manager, while the local provider registry stores only non-secret metadata and a secret ARN.
 - Live inventory checks for AWS, Azure and GCP connections. Failed APIs are surfaced as unavailable; no connected account is silently replaced with demo inventory.
-- Live AWS EC2 type/region offering/specification discovery for the selected verified account. No hardcoded AWS instance type fallback.
+- Live AWS EC2 type/region offering/specification discovery for the selected verified account. No hardcoded AWS instance type fallback..
 - Reasoning layer with deterministic policy checks, Amazon Bedrock Nova Lite, live inventory/telemetry and a reasoning orchestrator.
 - Terraform-only AWS EC2 demo provisioning. Plan is generated and checksummed, human-reviewed and only the exact saved plan is applied. Agent output is constrained to a short highlighted recommendation, exact/nearest safe hardware fit, evidence and limitations. Internal reasoning tags such as `<thinking>` are stripped before display. Legacy direct EC2 API stop/modify/start resize execution is disabled; the current stack creates a new demo instance and does not import or resize QuickCart.
 - Central S3 state backend for new Terraform deployments with versioning and native S3 lockfiles. Terraform is disabled until the S3 bucket is configured.
